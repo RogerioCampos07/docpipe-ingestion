@@ -16,9 +16,9 @@ Este serviço **não executa OCR**, não classifica documentos e não extrai dad
 2. A API valida formato, tamanho e metadados.
 3. O arquivo original é salvo em `dataset/documents/` com nome gerado pelo
    serviço.
-4. Os metadados e o estado inicial são persistidos no SQLite.
-5. Um evento `document.received.v1` é publicado.
-6. A API devolve `202 Accepted` com o identificador do documento.
+4. Os metadados e a outbox são persistidos na mesma transação SQLite.
+5. A API devolve `202 Accepted` com o identificador do documento.
+6. Um publicador separado entrega `document.received.v1` ao broker.
 
 ## Escopo da primeira versão
 
@@ -96,6 +96,31 @@ As configurações locais opcionais podem partir do arquivo de exemplo:
 cp .env.example .env
 ```
 
+As configurações introduzidas nas Etapas 2 e 3 são:
+
+| Variável | Padrão | Finalidade |
+| --- | --- | --- |
+| `DOCPIPE_INGESTION_DATABASE_URL` | `sqlite:///dataset/docpipe-ingestion.db` | Banco privado do serviço |
+| `DOCPIPE_INGESTION_SQLITE_TIMEOUT_SECONDS` | `5` | Espera máxima por bloqueio SQLite |
+| `DOCPIPE_INGESTION_SQLITE_WAL_ENABLED` | `true` | Ativar WAL em bancos SQLite baseados em arquivo |
+| `DOCPIPE_INGESTION_STORAGE_ROOT` | `dataset/documents` | Raiz privada dos documentos |
+| `DOCPIPE_INGESTION_MAX_FILE_SIZE_BYTES` | `10485760` | Limite real de 10 MiB por arquivo |
+| `DOCPIPE_INGESTION_STORAGE_CHUNK_SIZE_BYTES` | `65536` | Memória máxima aproximada por chunk |
+| `DOCPIPE_INGESTION_INCOMPLETE_FILE_AGE_SECONDS` | `3600` | Idade para diagnóstico de temporários abandonados |
+
+Crie ou atualize o schema antes de executar fluxos que usam persistência:
+
+```bash
+uv run alembic upgrade head
+```
+
+Para validar a reversibilidade da migration inicial em um banco descartável:
+
+```bash
+uv run alembic downgrade base
+uv run alembic upgrade head
+```
+
 Inicie a API em modo de desenvolvimento:
 
 ```bash
@@ -146,6 +171,11 @@ para orquestrar.
 
 ## Status
 
-A fundação da Etapa 1 disponibiliza a aplicação FastAPI, configuração por
-ambiente, liveness e pipeline local de qualidade. Upload, persistência,
-mensageria e observabilidade permanecem planejados para as etapas seguintes.
+As Etapas 1 a 3 disponibilizam a aplicação FastAPI básica, configuração por
+ambiente, liveness, domínio de documentos, migrations SQLite, repositórios,
+validação por streaming, SHA-256 e armazenamento local atômico. O caso de uso
+interno persiste metadados, mas ainda não é exposto por HTTP.
+
+Os endpoints de documentos, a criação do evento de negócio na outbox, o
+publicador, o broker e a observabilidade permanecem planejados para as etapas
+seguintes.

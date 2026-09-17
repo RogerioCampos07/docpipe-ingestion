@@ -72,6 +72,11 @@ configurável por variável de ambiente. O serviço deve habilitar chaves
 estrangeiras e configurar timeout de bloqueio. O modo WAL será usado quando
 validado pelos testes do ambiente alvo.
 
+Os testes locais validam WAL para bancos baseados em arquivo, portanto ele fica
+habilitado por padrão e pode ser desativado por configuração. Bancos em memória
+mantêm o modo próprio do SQLite. Chaves estrangeiras e `busy_timeout` são
+configurados em toda nova conexão.
+
 SQLite atende à primeira versão de instância única. Ele não deve ser apresentado
 como banco adequado para várias réplicas gravando concorrentemente.
 
@@ -154,6 +159,8 @@ O evento não deve conter o conteúdo do arquivo, URL pública nem credencial de
 - Timeouts devem ser explícitos para SQLite e broker.
 - A escrita do arquivo e a transação SQLite não formam uma única transação;
   arquivos órfãos devem ser detectáveis e reconciliáveis.
+- A reconciliação local é diagnóstica: identifica arquivos finais sem metadados
+  e temporários antigos, sem removê-los automaticamente.
 
 ## 12. Segurança e privacidade
 
