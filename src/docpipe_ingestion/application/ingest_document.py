@@ -16,6 +16,7 @@ from docpipe_ingestion.application.ports import (
 from docpipe_ingestion.domain.models import (
     Document,
     DocumentStatus,
+    OutboxEvent,
     ensure_utc,
 )
 
@@ -93,10 +94,32 @@ class IngestDocument:
             created_at=occurred_at,
             updated_at=occurred_at,
         )
+        event_id = self._uuid_factory()
+        event = OutboxEvent(
+            id=event_id,
+            aggregate_id=document_id,
+            event_type='document.received.v1',
+            payload={
+                'event_id': str(event_id),
+                'event_type': 'document.received',
+                'event_version': 1,
+                'occurred_at': occurred_at.isoformat(),
+                'correlation_id': str(command.correlation_id),
+                'document_id': str(document_id),
+                'data': {
+                    'storage_key': storage_key,
+                    'media_type': file_metadata.media_type,
+                    'size_bytes': file_metadata.size_bytes,
+                    'sha256': file_metadata.sha256,
+                },
+            },
+            created_at=occurred_at,
+        )
 
         try:
             with self._unit_of_work_factory() as unit_of_work:
                 unit_of_work.documents.add(document)
+                unit_of_work.outbox_events.add(event)
                 unit_of_work.commit()
         except Exception as error:
             raise MetadataPersistenceError(storage_key) from error

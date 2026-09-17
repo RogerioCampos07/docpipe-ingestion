@@ -34,6 +34,7 @@ from docpipe_ingestion.infrastructure.storage.local import LocalDocumentStorage
 
 DOCUMENT_ID = UUID('12345678-1234-5678-1234-567812345678')
 STORAGE_ID = UUID('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+EVENT_ID = UUID('11111111-2222-3333-4444-555555555555')
 CORRELATION_ID = UUID('87654321-4321-8765-4321-876543218765')
 NOW = datetime(2026, 9, 17, 12, tzinfo=UTC)
 CONTENT = b'%PDF-1.7\nsynthetic document'
@@ -50,6 +51,7 @@ class InvalidIngestionCase:
 def _uuid_factory() -> Iterator[UUID]:
     yield DOCUMENT_ID
     yield STORAGE_ID
+    yield EVENT_ID
 
 
 def _use_case(
@@ -111,7 +113,13 @@ def test_ingestion_stores_file_and_persists_matching_metadata(
         event_count = session.scalar(
             select(func.count()).select_from(OutboxEventModel)
         )
-    assert event_count == 0
+        event = session.get(OutboxEventModel, EVENT_ID)
+    assert event_count == 1
+    assert event is not None
+    assert event.aggregate_id == DOCUMENT_ID
+    assert event.event_type == 'document.received.v1'
+    assert event.payload['correlation_id'] == str(CORRELATION_ID)
+    assert event.payload['data']['sha256'] == document.sha256
 
 
 @pytest.mark.parametrize(
