@@ -1,6 +1,8 @@
 # DocPipe Ingestion
 
-Microserviço de entrada de documentos do **DocPipe**, projeto acadêmico voltado ao estudo de desempenho, escalabilidade e observabilidade em uma arquitetura de microserviços.
+Microserviço de entrada de documentos do **DocPipe**, projeto acadêmico
+voltado ao estudo de desempenho, escalabilidade e observabilidade em uma
+arquitetura de microserviços.
 
 ## Responsabilidade
 
@@ -20,6 +22,9 @@ Este serviço **não executa OCR**, não classifica documentos e não extrai dad
 
 ## Escopo da primeira versão
 
+Os itens abaixo descrevem a primeira versão planejada e serão implementados
+incrementalmente conforme o [plano](docs/PLAN.md):
+
 - upload de um arquivo por requisição;
 - formatos iniciais: PDF, PNG e JPEG;
 - validação de tipo e limite de tamanho configurável;
@@ -35,7 +40,7 @@ Este serviço **não executa OCR**, não classifica documentos e não extrai dad
 
 ## Stack da primeira versão
 
-- Python 3.14+
+- Python 3.14.4 no ambiente local, com suporte declarado a Python 3.14+
 - FastAPI e Pydantic
 - SQLAlchemy 2 e Alembic
 - SQLite
@@ -54,13 +59,13 @@ ser versionados no Git.
 
 ## Endpoints iniciais
 
-| Método | Rota | Finalidade |
-| --- | --- | --- |
-| `POST` | `/v1/documents` | Receber um documento |
-| `GET` | `/v1/documents/{document_id}` | Consultar metadados e estado |
-| `GET` | `/health/live` | Verificar se o processo está ativo |
-| `GET` | `/health/ready` | Verificar dependências essenciais |
-| `GET` | `/metrics` | Expor métricas para Prometheus |
+| Estado | Método | Rota | Finalidade |
+| --- | --- | --- | --- |
+| Implementado | `GET` | `/health/live` | Verificar se o processo está ativo |
+| Planejado | `POST` | `/v1/documents` | Receber um documento |
+| Planejado | `GET` | `/v1/documents/{document_id}` | Consultar metadados e estado |
+| Planejado | `GET` | `/health/ready` | Verificar dependências essenciais |
+| Planejado | `GET` | `/metrics` | Expor métricas para Prometheus |
 
 ## Estados do documento
 
@@ -78,9 +83,69 @@ ser versionados no Git.
 
 ## Execução
 
-Os comandos de instalação e execução serão acrescentados quando a estrutura mínima da aplicação for implementada. O gerenciador de dependências adotado é o `uv`.
+O projeto usa `uv`. Para instalar exatamente as dependências registradas no
+lockfile:
+
+```bash
+uv sync --locked
+```
+
+As configurações locais opcionais podem partir do arquivo de exemplo:
+
+```bash
+cp .env.example .env
+```
+
+Inicie a API em modo de desenvolvimento:
+
+```bash
+uv run uvicorn docpipe_ingestion.api.app:app --reload
+```
+
+Verifique a liveness em outro terminal:
+
+```bash
+curl http://127.0.0.1:8000/health/live
+```
+
+A resposta esperada é:
+
+```json
+{"status":"ok"}
+```
+
+## Qualidade
+
+```bash
+uv run task lint
+uv run task format
+uv run task typecheck
+uv run task test
+uv run task typos
+```
+
+Para executar lint, verificação de formatação, tipos, testes e Typos em uma
+única tarefa:
+
+```bash
+uv run task quality
+```
+
+## Container
+
+Construa e execute a imagem inicial:
+
+```bash
+docker build -t docpipe-ingestion .
+docker run --rm -p 8000:8000 docpipe-ingestion
+```
+
+Esta etapa não requer RabbitMQ nem qualquer outro serviço externo. O
+`docker-compose.yml` permanece vazio até existir infraestrutura local concreta
+para orquestrar.
 
 ## Status
 
-Planejamento inicial. A implementação deve seguir as etapas de
-[PLAN.md](docs/PLAN.md).
+A fundação da Etapa 1 disponibiliza a aplicação FastAPI, configuração por
+ambiente, liveness e pipeline local de qualidade. Upload, persistência,
+mensageria e observabilidade permanecem planejados para as etapas seguintes.

@@ -46,7 +46,7 @@ ou escopo do serviço, interrompa a implementação e apresente a divergência.
 
 ## Estado inicial do template
 
-- O ambiente local usa Python `3.14.4`; o projeto aceita Python `>=3.13`.
+- O ambiente local usa Python `3.14.4`; o projeto aceita Python `>=3.14`.
 - Dependências e ambiente virtual são gerenciados com `uv`.
 - `pytest`, `pytest-cov`, `ruff`, `taskipy` e `typos` são dependências de
   desenvolvimento.

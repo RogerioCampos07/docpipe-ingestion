@@ -193,3 +193,12 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
+
+# DocPipe runtime data
+dataset/*
+!dataset/documents/
+dataset/documents/*
+!dataset/documents/.gitkeep
+
+#vscode settings
+.vscode/settings.json
