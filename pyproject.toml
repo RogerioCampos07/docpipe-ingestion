@@ -1,19 +1,30 @@
 [project]
 name = "docpipe-ingestion"
 version = "0.1.0"
-description = "Add your description here"
+description = "Microserviço de ingestão de documentos do DocPipe"
 readme = "README.md"
-requires-python = ">=3.13"
-dependencies = []
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.141.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "uvicorn>=0.53.0",
+]
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.13.0",
+    "mypy>=2.3.1",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.2",
     "taskipy>=1.14.1",
     "typos>=1.49.0",
 ]
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 79
@@ -28,13 +39,29 @@ preview = true
 quote-style = 'single'
 
 [tool.pytest.ini_options]
-pythonpath = "."
-addopts = '-p no:warnings'
+testpaths = ['tests']
+addopts = '-p no:warnings --strict-config --strict-markers'
+
+[tool.mypy]
+python_version = '3.14'
+strict = true
+files = ['src', 'tests', 'main.py']
+
+[tool.coverage.run]
+branch = true
+source = ['docpipe_ingestion']
+
+[tool.coverage.report]
+show_missing = true
 
 [tool.taskipy.tasks]
-lint = 'ruff check'
-pre_format = 'ruff check --fix'
-format = 'ruff format'
+lint = 'ruff check .'
+pre_format = 'ruff check --fix .'
+format = 'ruff format .'
+format-check = 'ruff format --check .'
+typecheck = 'mypy'
 pre_test = 'task lint'
-test = 'pytest -s -x --cov=docpipe_ingestion -vv'
+test = 'pytest -s -x --cov=docpipe_ingestion --cov-report=term-missing -vv'
 post_test = 'coverage html'
+typos = 'typos'
+quality = 'task format-check && task typecheck && task test && task typos'
