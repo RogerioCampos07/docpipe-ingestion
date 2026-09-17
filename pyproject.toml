@@ -1,5 +1,5 @@
 [project]
-name = "python-project-template"
+name = "docpipe-ingestion"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -36,5 +36,5 @@ lint = 'ruff check'
 pre_format = 'ruff check --fix'
 format = 'ruff format'
 pre_test = 'task lint'
-test = 'pytest -s -x --cov=python_project_template -vv'
+test = 'pytest -s -x --cov=docpipe_ingestion -vv'
 post_test = 'coverage html'
