@@ -51,6 +51,7 @@ entradas inválidas são rejeitadas sem persistência incorreta.
 
 - implementar `POST /v1/documents`;
 - implementar `GET /v1/documents/{document_id}`;
+- registrar documento e evento pendente na mesma transação antes do `202`;
 - padronizar respostas e erros;
 - criar testes de integração da API;
 - documentar OpenAPI e exemplos.
@@ -62,7 +63,7 @@ RF-005/RF-007 passam nos testes.
 
 **Objetivo:** publicar eventos sem perder o vínculo com a persistência.
 
-- gravar documento e outbox na mesma transação;
+- consumir os eventos pendentes registrados pela ingestão;
 - definir interface de broker e schema `document.received.v1`;
 - implementar publicador com confirmação, retry e backoff;
 - criar adaptador RabbitMQ para o laboratório local;

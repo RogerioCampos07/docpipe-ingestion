@@ -114,7 +114,10 @@ como banco adequado para várias réplicas gravando concorrentemente.
 
 ### `POST /v1/documents`
 
-- Entrada: arquivo e metadados opcionais previstos pelo schema.
+- Entrada: exatamente um campo `file` em `multipart/form-data`. Nesta versão,
+  não há outros metadados de formulário.
+- `X-Correlation-ID` aceita um UUID fornecido pelo cliente; quando ausente, a
+  API gera um UUID. O valor validado é devolvido no mesmo cabeçalho.
 - Sucesso: `202 Accepted`.
 - Resposta mínima: `document_id`, `status`, `correlation_id`, `received_at`.
 - Erros esperados: `400` para requisição inválida, `413` para tamanho excedido, `415` para tipo não suportado e `503` quando uma dependência essencial impedir a aceitação segura.
@@ -123,9 +126,26 @@ Repetições causadas por timeout poderão ser controladas posteriormente por `I
 
 ### `GET /v1/documents/{document_id}`
 
-- Retorna somente metadados pertencentes ao Ingestion.
+- Retorna `document_id`, `original_name`, `media_type`, `size_bytes`, `sha256`,
+  `status`, `correlation_id`, `created_at` e `updated_at`.
 - Não devolve o arquivo nem URL pública nesta versão.
+- Não devolve `storage_key` nem o caminho físico do arquivo.
 - Retorna `404` quando o identificador não existe ou não é visível no contexto de acesso.
+
+Erros HTTP usam o mesmo envelope, sem detalhes internos:
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "The request is not valid.",
+    "correlation_id": "uuid"
+  }
+}
+```
+
+Falhas de validação do framework, inclusive UUID malformado e multipart sem o
+campo obrigatório, são normalizadas para `400` neste contrato.
 
 ## 10. Evento `document.received.v1`
 

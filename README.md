@@ -62,8 +62,8 @@ ser versionados no Git.
 | Estado | Método | Rota | Finalidade |
 | --- | --- | --- | --- |
 | Implementado | `GET` | `/health/live` | Verificar se o processo está ativo |
-| Planejado | `POST` | `/v1/documents` | Receber um documento |
-| Planejado | `GET` | `/v1/documents/{document_id}` | Consultar metadados e estado |
+| Implementado | `POST` | `/v1/documents` | Receber um documento |
+| Implementado | `GET` | `/v1/documents/{document_id}` | Consultar metadados e estado |
 | Planejado | `GET` | `/health/ready` | Verificar dependências essenciais |
 | Planejado | `GET` | `/metrics` | Expor métricas para Prometheus |
 
@@ -139,6 +139,49 @@ A resposta esperada é:
 {"status":"ok"}
 ```
 
+Antes de usar os endpoints de documentos, aplique as migrations. Envie um
+único PDF, PNG ou JPEG como `multipart/form-data`:
+
+```bash
+curl -i \
+  -H 'X-Correlation-ID: 87654321-4321-8765-4321-876543218765' \
+  -F 'file=@sample.pdf;type=application/pdf' \
+  http://127.0.0.1:8000/v1/documents
+```
+
+O cabeçalho de correlação é opcional. Quando ausente, a API gera um UUID e o
+devolve em `X-Correlation-ID`. Uma ingestão aceita retorna `202`:
+
+```json
+{
+  "document_id": "12345678-1234-5678-1234-567812345678",
+  "status": "STORED",
+  "correlation_id": "87654321-4321-8765-4321-876543218765",
+  "received_at": "2026-09-17T12:00:00Z"
+}
+```
+
+Consulte somente os metadados pertencentes ao Ingestion:
+
+```bash
+curl http://127.0.0.1:8000/v1/documents/12345678-1234-5678-1234-567812345678
+```
+
+Os erros usam um envelope estável e não incluem caminhos, chaves privadas ou
+detalhes das dependências:
+
+```json
+{
+  "error": {
+    "code": "unsupported_file_type",
+    "message": "The uploaded file type is not supported.",
+    "correlation_id": "87654321-4321-8765-4321-876543218765"
+  }
+}
+```
+
+A documentação OpenAPI fica disponível em `/docs` e `/openapi.json`.
+
 ## Qualidade
 
 ```bash
@@ -171,11 +214,11 @@ para orquestrar.
 
 ## Status
 
-As Etapas 1 a 3 disponibilizam a aplicação FastAPI básica, configuração por
-ambiente, liveness, domínio de documentos, migrations SQLite, repositórios,
-validação por streaming, SHA-256 e armazenamento local atômico. O caso de uso
-interno persiste metadados, mas ainda não é exposto por HTTP.
+As Etapas 1 a 4 disponibilizam a aplicação FastAPI, configuração por ambiente,
+liveness, domínio de documentos, migrations SQLite, repositórios, validação
+por streaming, SHA-256, armazenamento local atômico e os endpoints de upload e
+consulta. Uma aceitação registra documento e evento pendente na mesma transação
+SQLite.
 
-Os endpoints de documentos, a criação do evento de negócio na outbox, o
-publicador, o broker e a observabilidade permanecem planejados para as etapas
-seguintes.
+O publicador da outbox, o broker e a observabilidade permanecem planejados para
+as etapas seguintes.
