@@ -195,6 +195,10 @@ pyrightconfig.json
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
 
 # DocPipe runtime data
+dataset/*.db
+dataset/*.db-journal
+dataset/*.db-shm
+dataset/*.db-wal
 dataset/*
 !dataset/documents/
 dataset/documents/*
