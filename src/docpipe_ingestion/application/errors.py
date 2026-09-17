@@ -34,3 +34,11 @@ class MetadataPersistenceError(IngestionError):
         super().__init__(
             'metadata persistence failed after the file was stored'
         )
+
+
+class MetadataQueryError(IngestionError):
+    """Raised when document metadata cannot be queried safely."""
+
+
+class DocumentNotFoundError(IngestionError):
+    """Raised when a document identifier has no persisted metadata."""
