@@ -96,7 +96,7 @@ As configurações locais opcionais podem partir do arquivo de exemplo:
 cp .env.example .env
 ```
 
-As configurações introduzidas nas Etapas 2 e 3 são:
+As configurações introduzidas nas Etapas 2, 3 e 5 são:
 
 | Variável | Padrão | Finalidade |
 | --- | --- | --- |
@@ -107,6 +107,15 @@ As configurações introduzidas nas Etapas 2 e 3 são:
 | `DOCPIPE_INGESTION_MAX_FILE_SIZE_BYTES` | `10485760` | Limite real de 10 MiB por arquivo |
 | `DOCPIPE_INGESTION_STORAGE_CHUNK_SIZE_BYTES` | `65536` | Memória máxima aproximada por chunk |
 | `DOCPIPE_INGESTION_INCOMPLETE_FILE_AGE_SECONDS` | `3600` | Idade para diagnóstico de temporários abandonados |
+| `DOCPIPE_INGESTION_RABBITMQ_URL` | `amqp://docpipe:docpipe@localhost:5672/docpipe` | Conexão AMQP local; trate senhas reais como segredo |
+| `DOCPIPE_INGESTION_RABBITMQ_EXCHANGE` | `docpipe.events` | Exchange direct durável |
+| `DOCPIPE_INGESTION_RABBITMQ_QUEUE` | `docpipe.document.received.v1` | Fila durável do evento |
+| `DOCPIPE_INGESTION_RABBITMQ_ROUTING_KEY` | `document.received.v1` | Chave do binding |
+| `DOCPIPE_INGESTION_RABBITMQ_TIMEOUT_SECONDS` | `5` | Timeout de conexão e publicação |
+| `DOCPIPE_INGESTION_OUTBOX_MAX_ATTEMPTS` | `5` | Limite de tentativas por evento |
+| `DOCPIPE_INGESTION_OUTBOX_BACKOFF_SECONDS` | `1` | Base do backoff exponencial |
+| `DOCPIPE_INGESTION_OUTBOX_BATCH_SIZE` | `50` | Eventos lidos por ciclo |
+| `DOCPIPE_INGESTION_OUTBOX_POLLING_SECONDS` | `1` | Espera entre ciclos |
 
 Crie ou atualize o schema antes de executar fluxos que usam persistência:
 
@@ -199,7 +208,31 @@ Para executar lint, verificação de formatação, tipos, testes e Typos em uma
 uv run task quality
 ```
 
-## Container
+## RabbitMQ e publicador da outbox
+
+O laboratório local usa RabbitMQ com exchange direct `docpipe.events`, fila
+durável `docpipe.document.received.v1` e routing key
+`document.received.v1`. Inicie e aguarde o health check:
+
+```bash
+docker compose pull rabbitmq
+docker compose up -d --wait rabbitmq
+uv run python -m docpipe_ingestion.outbox_worker
+```
+
+O publicador é um processo separado da API. Ele usa publisher confirms, retry
+com backoff e entrega pelo menos uma vez; consumidores devem deduplicar por
+`event_id`. Para executar a integração real:
+
+```bash
+DOCPIPE_RABBITMQ_INTEGRATION=1 uv run pytest -m rabbitmq
+docker compose stop rabbitmq
+```
+
+O comando de parada preserva o volume nomeado. Não use `docker compose down
+-v` se desejar preservar os dados locais.
+
+## Container da API
 
 Construa e execute a imagem inicial:
 
@@ -208,17 +241,16 @@ docker build -t docpipe-ingestion .
 docker run --rm -p 8000:8000 docpipe-ingestion
 ```
 
-Esta etapa não requer RabbitMQ nem qualquer outro serviço externo. O
-`docker-compose.yml` permanece vazio até existir infraestrutura local concreta
-para orquestrar.
+O Docker Compose desta etapa orquestra somente o RabbitMQ local. A API e o
+publicador podem continuar executando com `uv` no host de desenvolvimento.
 
 ## Status
 
-As Etapas 1 a 4 disponibilizam a aplicação FastAPI, configuração por ambiente,
+As Etapas 1 a 5 disponibilizam a aplicação FastAPI, configuração por ambiente,
 liveness, domínio de documentos, migrations SQLite, repositórios, validação
 por streaming, SHA-256, armazenamento local atômico e os endpoints de upload e
 consulta. Uma aceitação registra documento e evento pendente na mesma transação
 SQLite.
 
-O publicador da outbox, o broker e a observabilidade permanecem planejados para
-as etapas seguintes.
+O publicador da outbox e o RabbitMQ local estão implementados. Persistência
+compartilhada e observabilidade completa permanecem planejadas.

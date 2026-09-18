@@ -42,3 +42,7 @@ class MetadataQueryError(IngestionError):
 
 class DocumentNotFoundError(IngestionError):
     """Raised when a document identifier has no persisted metadata."""
+
+
+class BrokerPublishError(IngestionError):
+    """Raised when the broker has not confirmed a publication."""

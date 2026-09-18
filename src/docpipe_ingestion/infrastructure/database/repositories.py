@@ -1,7 +1,8 @@
+from datetime import datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from docpipe_ingestion.domain.models import (
@@ -103,3 +104,44 @@ class SqlAlchemyOutboxEventRepository:
     def get(self, event_id: UUID) -> OutboxEvent | None:
         model = self._session.get(OutboxEventModel, event_id)
         return None if model is None else _to_outbox_event(model)
+
+    def list_pending(
+        self,
+        *,
+        limit: int,
+        max_attempts: int,
+    ) -> list[OutboxEvent]:
+        statement = (
+            select(OutboxEventModel)
+            .where(OutboxEventModel.published_at.is_(None))
+            .where(OutboxEventModel.attempts < max_attempts)
+            .order_by(OutboxEventModel.created_at, OutboxEventModel.id)
+            .limit(limit)
+        )
+        models = self._session.scalars(statement)
+        return [_to_outbox_event(model) for model in models]
+
+    def record_failure(self, event_id: UUID, error: str) -> None:
+        self._session.execute(
+            update(OutboxEventModel)
+            .where(OutboxEventModel.id == event_id)
+            .where(OutboxEventModel.published_at.is_(None))
+            .values(
+                attempts=OutboxEventModel.attempts + 1,
+                last_error=error[:500],
+            )
+        )
+
+    def mark_published(self, event_id: UUID, published_at: datetime) -> None:
+        event = self._session.get(OutboxEventModel, event_id)
+        if event is None or event.published_at is not None:
+            return
+        event.attempts += 1
+        event.last_error = None
+        event.published_at = published_at
+        self._session.execute(
+            update(DocumentModel)
+            .where(DocumentModel.id == event.aggregate_id)
+            .where(DocumentModel.status == 'STORED')
+            .values(status='PUBLISHED', updated_at=published_at)
+        )

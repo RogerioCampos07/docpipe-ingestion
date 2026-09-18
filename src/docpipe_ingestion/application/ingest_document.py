@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from docpipe_ingestion.application.errors import MetadataPersistenceError
+from docpipe_ingestion.application.events import DocumentReceivedV1
 from docpipe_ingestion.application.file_validation import (
     ValidatedFileStream,
     sanitize_original_name,
@@ -95,24 +96,15 @@ class IngestDocument:
             updated_at=occurred_at,
         )
         event_id = self._uuid_factory()
+        event_payload = DocumentReceivedV1.from_document(
+            document,
+            event_id=event_id,
+        )
         event = OutboxEvent(
             id=event_id,
             aggregate_id=document_id,
             event_type='document.received.v1',
-            payload={
-                'event_id': str(event_id),
-                'event_type': 'document.received',
-                'event_version': 1,
-                'occurred_at': occurred_at.isoformat(),
-                'correlation_id': str(command.correlation_id),
-                'document_id': str(document_id),
-                'data': {
-                    'storage_key': storage_key,
-                    'media_type': file_metadata.media_type,
-                    'size_bytes': file_metadata.size_bytes,
-                    'sha256': file_metadata.sha256,
-                },
-            },
+            payload=event_payload.model_dump(mode='json'),
             created_at=occurred_at,
         )
 

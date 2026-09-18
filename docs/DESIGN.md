@@ -182,6 +182,14 @@ O evento não deve conter o conteúdo do arquivo, URL pública nem credencial de
 - A reconciliação local é diagnóstica: identifica arquivos finais sem metadados
   e temporários antigos, sem removê-los automaticamente.
 
+Na implementação local, um único publicador consulta lotes SQLite em ordem de
+criação. Cada falha incrementa `attempts` e registra apenas a classe resumida
+do erro; `published_at` e o estado `PUBLISHED` do documento são atualizados na
+mesma transação somente após publisher confirm. O RabbitMQ usa exchange direct
+durável `docpipe.events`, fila durável `docpipe.document.received.v1` e routing
+key `document.received.v1`. Uma queda entre o confirm e o commit SQLite pode
+republicar o mesmo `event_id`, portanto consumidores devem ser idempotentes.
+
 ## 12. Segurança e privacidade
 
 - `dataset/documents/` e o arquivo SQLite não podem ser expostos pelo servidor
