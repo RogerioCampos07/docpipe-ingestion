@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Request, status
@@ -18,6 +19,7 @@ from docpipe_ingestion.application.errors import (
 )
 
 CORRELATION_HEADER = 'X-Correlation-ID'
+logger = logging.getLogger(__name__)
 
 
 def request_correlation_id(request: Request) -> UUID:
@@ -61,6 +63,10 @@ def install_exception_handlers(application: FastAPI) -> None:
         error: InvalidFileMetadataError,
     ) -> JSONResponse:
         del error
+        application.state.metrics.validation_failures.labels(
+            'invalid_metadata'
+        ).inc()
+        application.state.metrics.uploads.labels('rejected').inc()
         return error_response(
             request,
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -74,6 +80,8 @@ def install_exception_handlers(application: FastAPI) -> None:
         error: EmptyFileError,
     ) -> JSONResponse:
         del error
+        application.state.metrics.validation_failures.labels('empty').inc()
+        application.state.metrics.uploads.labels('rejected').inc()
         return error_response(
             request,
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -87,6 +95,8 @@ def install_exception_handlers(application: FastAPI) -> None:
         error: FileTooLargeError,
     ) -> JSONResponse:
         del error
+        application.state.metrics.validation_failures.labels('too_large').inc()
+        application.state.metrics.uploads.labels('rejected').inc()
         return error_response(
             request,
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
@@ -100,6 +110,10 @@ def install_exception_handlers(application: FastAPI) -> None:
         error: UnsupportedFileTypeError,
     ) -> JSONResponse:
         del error
+        application.state.metrics.validation_failures.labels(
+            'unsupported_type'
+        ).inc()
+        application.state.metrics.uploads.labels('rejected').inc()
         return error_response(
             request,
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -126,6 +140,15 @@ def install_exception_handlers(application: FastAPI) -> None:
         error: StorageError,
     ) -> JSONResponse:
         del error
+        logger.warning(
+            'storage dependency unavailable',
+            extra={
+                'operation': 'document.ingest',
+                'status': 'failure',
+                'dependency_type': 'storage',
+                'error_category': 'storage_unavailable',
+            },
+        )
         return error_response(
             request,
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -140,6 +163,15 @@ def install_exception_handlers(application: FastAPI) -> None:
         error: MetadataPersistenceError | MetadataQueryError,
     ) -> JSONResponse:
         del error
+        logger.warning(
+            'database dependency unavailable',
+            extra={
+                'operation': 'database.operation',
+                'status': 'failure',
+                'dependency_type': 'database',
+                'error_category': 'persistence_unavailable',
+            },
+        )
         return error_response(
             request,
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -153,6 +185,9 @@ def install_exception_handlers(application: FastAPI) -> None:
         error: RequestValidationError,
     ) -> JSONResponse:
         del error
+        application.state.metrics.validation_failures.labels(
+            'invalid_request'
+        ).inc()
         return error_response(
             request,
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -182,7 +217,15 @@ def install_exception_handlers(application: FastAPI) -> None:
         request: Request,
         error: Exception,
     ) -> JSONResponse:
-        del error
+        logger.error(
+            'unexpected application error',
+            exc_info=(type(error), error, error.__traceback__),
+            extra={
+                'operation': 'http.request',
+                'status': 'failure',
+                'error_category': 'internal',
+            },
+        )
         return error_response(
             request,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

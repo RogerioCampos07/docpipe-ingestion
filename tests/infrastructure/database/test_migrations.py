@@ -43,6 +43,9 @@ def test_migrations_upgrade_empty_database_and_are_reversible(
         }
         foreign_keys = inspector.get_foreign_keys('outbox_events')
         assert foreign_keys[0]['referred_table'] == 'documents'
+        assert 'trace_context' in {
+            column['name'] for column in inspector.get_columns('outbox_events')
+        }
     finally:
         engine.dispose()
 

@@ -43,6 +43,7 @@ def _to_outbox_event(model: OutboxEventModel) -> OutboxEvent:
         attempts=model.attempts,
         last_error=model.last_error,
         next_attempt_at=model.next_attempt_at,
+        trace_context=model.trace_context,
     )
 
 
@@ -100,6 +101,7 @@ class SqlAlchemyOutboxEventRepository:
                 attempts=event.attempts,
                 last_error=event.last_error,
                 next_attempt_at=event.next_attempt_at,
+                trace_context=event.trace_context,
             )
         )
 

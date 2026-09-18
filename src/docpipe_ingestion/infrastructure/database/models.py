@@ -99,3 +99,6 @@ class OutboxEventModel(Base):
         nullable=True,
         index=True,
     )
+    trace_context: Mapped[dict[str, str] | None] = mapped_column(
+        JSON, nullable=True
+    )
