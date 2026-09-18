@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: DocPipe
+    folder: DocPipe
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
