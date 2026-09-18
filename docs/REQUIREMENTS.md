@@ -70,6 +70,9 @@ O serviço deve produzir `document.received.v1` após a persistência do documen
 - falhas temporárias utilizam retry com backoff;
 - a solução assume entrega pelo menos uma vez.
 
+**Estado:** implementado com RabbitMQ no laboratório local e publicador
+executado separadamente da API.
+
 ### RF-007 — Consultar estado
 
 O serviço deve permitir consulta dos metadados e do estado pelo UUID.

@@ -61,6 +61,8 @@ RF-005/RF-007 passam nos testes.
 
 ## Etapa 5 — Outbox e mensageria
 
+**Estado:** implementada.
+
 **Objetivo:** publicar eventos sem perder o vínculo com a persistência.
 
 - consumir os eventos pendentes registrados pela ingestão;
