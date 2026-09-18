@@ -5,11 +5,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from threading import Event
-from time import sleep
+from time import perf_counter, sleep
+from uuid import UUID
+
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.trace import SpanKind
 
 from docpipe_ingestion.application.events import DocumentReceivedV1
 from docpipe_ingestion.application.ports import BrokerPublisher, UnitOfWork
 from docpipe_ingestion.domain.models import OutboxEvent
+from docpipe_ingestion.infrastructure.observability.context import correlated
+from docpipe_ingestion.infrastructure.observability.metrics import Metrics
+from docpipe_ingestion.infrastructure.observability.tracing import span
 
 type UnitOfWorkFactory = Callable[[], UnitOfWork]
 type Clock = Callable[[], datetime]
@@ -29,7 +36,7 @@ class PublisherSettings:
 class OutboxPublisher:
     """Single-instance polling publisher with at-least-once delivery."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         unit_of_work_factory: UnitOfWorkFactory,
@@ -37,12 +44,16 @@ class OutboxPublisher:
         settings: PublisherSettings,
         clock: Clock = lambda: datetime.now(UTC),
         sleeper: Sleeper = sleep,
+        metrics: Metrics | None = None,
+        tracer_provider: TracerProvider | None = None,
     ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
         self._broker = broker
         self._settings = settings
         self._clock = clock
         self._sleep = sleeper
+        self._metrics = metrics
+        self._tracer_provider = tracer_provider
 
     def process_batch(self) -> int:
         """Publish at most one configured batch and return successes."""
@@ -59,8 +70,26 @@ class OutboxPublisher:
                 if not events:
                     break
                 event = events[0]
+                correlation = UUID(str(event.payload['correlation_id']))
+                attempt_started = perf_counter()
+                if self._metrics is not None:
+                    self._metrics.publication_attempts.inc()
                 try:
-                    self._validate_and_publish(event)
+                    with (
+                        correlated(correlation),
+                        span(
+                            'outbox.publish_attempt',
+                            provider=self._tracer_provider,
+                            carrier=event.trace_context,
+                            kind=SpanKind.PRODUCER,
+                            attributes={
+                                'docpipe.correlation_id': str(correlation)
+                            },
+                        ),
+                    ):
+                        self._validate_and_publish(event)
+                        if self._metrics is not None:
+                            self._metrics.publications_confirmed.inc()
                 except Exception as error:
                     summary = type(error).__name__
                     delay = min(
@@ -73,13 +102,25 @@ class OutboxPublisher:
                         next_attempt_at=now + timedelta(seconds=delay),
                     )
                     unit_of_work.commit()
-                    logger.warning(
-                        'outbox publication failed event_id=%s '
-                        'attempt=%d error=%s',
-                        event.id,
-                        event.attempts + 1,
-                        summary,
-                    )
+                    with correlated(correlation):
+                        logger.warning(
+                            'outbox publication failed',
+                            extra={
+                                'operation': 'outbox.publish',
+                                'status': 'retry',
+                                'attempt': event.attempts + 1,
+                                'dependency_type': 'broker',
+                                'dependency_backend': 'rabbitmq',
+                                'error_category': summary,
+                            },
+                        )
+                    if self._metrics is not None:
+                        self._metrics.publication_failures.labels(
+                            summary
+                        ).inc()
+                        self._metrics.publication_duration.labels(
+                            'failure'
+                        ).observe(perf_counter() - attempt_started)
                     self._sleep(delay)
                     break
                 unit_of_work.outbox_events.mark_published(
@@ -88,7 +129,23 @@ class OutboxPublisher:
                 )
                 unit_of_work.commit()
             published += 1
-            logger.info('outbox event published event_id=%s', event.id)
+            if self._metrics is not None:
+                self._metrics.publication_duration.labels('success').observe(
+                    perf_counter() - attempt_started
+                )
+            with correlated(correlation):
+                logger.info(
+                    'outbox event published',
+                    extra={
+                        'operation': 'outbox.publish',
+                        'status': 'persisted',
+                        'duration_ms': round(
+                            (perf_counter() - attempt_started) * 1000, 3
+                        ),
+                        'dependency_type': 'broker',
+                        'dependency_backend': 'rabbitmq',
+                    },
+                )
         return published
 
     def _validate_and_publish(self, event: OutboxEvent) -> None:
@@ -103,7 +160,19 @@ class OutboxPublisher:
         """Poll until a controlled shutdown is requested."""
         try:
             while not stop_event.is_set():
-                self.process_batch()
+                started = perf_counter()
+                outcome = 'success'
+                try:
+                    self.process_batch()
+                except Exception:
+                    outcome = 'failure'
+                    raise
+                finally:
+                    if self._metrics is not None:
+                        self._metrics.worker_cycles.labels(outcome).inc()
+                        self._metrics.worker_cycle_duration.labels(
+                            outcome
+                        ).observe(perf_counter() - started)
                 stop_event.wait(self._settings.polling_seconds)
         finally:
             self._broker.close()

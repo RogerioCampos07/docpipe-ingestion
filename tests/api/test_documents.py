@@ -284,3 +284,14 @@ def test_unknown_route_uses_standard_not_found_error() -> None:
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json()['error']['code'] == 'not_found'
+
+
+def test_metrics_uses_normalized_route_without_identifiers() -> None:
+    with _client() as client:
+        client.get(f'/v1/documents/{DOCUMENT_ID}')
+        response = client.get('/metrics')
+
+    assert response.status_code == status.HTTP_200_OK
+    assert 'route="/v1/documents/{document_id}"' in response.text
+    assert str(DOCUMENT_ID) not in response.text
+    assert str(REQUEST_CORRELATION_ID) not in response.text

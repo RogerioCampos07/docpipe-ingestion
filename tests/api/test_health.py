@@ -1,7 +1,9 @@
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from docpipe_ingestion.api.app import create_app
+from docpipe_ingestion.infrastructure.health import ReadinessChecker
 from docpipe_ingestion.infrastructure.settings import Settings
 
 
@@ -21,3 +23,41 @@ def test_application_uses_configured_service_name() -> None:
     )
 
     assert application.title == 'Configured Ingestion'
+
+
+def test_readiness_reports_only_stable_public_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ReadinessChecker,
+        'check',
+        lambda self: {'database': False, 'storage': True},
+    )
+    application = create_app(Settings(environment='test'))
+
+    with TestClient(application) as client:
+        response = client.get('/health/ready')
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert response.json()['error']['code'] == 'service_not_ready'
+    assert 'database' not in response.text
+    assert 'storage' not in response.text
+
+
+def test_readiness_is_independent_from_rabbitmq(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ReadinessChecker,
+        'check',
+        lambda self: {'database': True, 'storage': True},
+    )
+    application = create_app(
+        Settings(environment='test', rabbitmq_url='amqp://unavailable/private')
+    )
+
+    with TestClient(application) as client:
+        response = client.get('/health/ready')
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {'status': 'ok'}

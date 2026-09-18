@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,6 +46,29 @@ class Settings(BaseSettings):
     outbox_backoff_seconds: float = Field(default=1.0, gt=0)
     outbox_batch_size: int = Field(default=50, gt=0)
     outbox_polling_seconds: float = Field(default=1.0, gt=0)
+    log_format: Literal['json', 'text'] = 'json'
+    log_level: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] = (
+        'INFO'
+    )
+    metrics_enabled: bool = True
+    worker_monitoring_enabled: bool = True
+    worker_metrics_host: str = '127.0.0.1'
+    worker_metrics_port: int = Field(default=9001, ge=1, le=65535)
+    traces_enabled: bool = False
+    traces_exporter: Literal['none', 'otlp'] = 'none'
+    otlp_endpoint: AnyHttpUrl = AnyHttpUrl('http://127.0.0.1:4318')
+    otlp_protocol: Literal['http/protobuf'] = 'http/protobuf'
+    traces_sampler: Literal[
+        'always_on',
+        'always_off',
+        'parentbased_traceidratio',
+    ] = 'parentbased_traceidratio'
+    traces_sample_ratio: float = Field(default=1.0, ge=0, le=1)
+    otlp_timeout_seconds: float = Field(default=2.0, gt=0)
+    telemetry_shutdown_timeout_seconds: float = Field(default=3.0, gt=0)
+    readiness_database_timeout_seconds: float = Field(default=2.0, gt=0)
+    readiness_storage_timeout_seconds: float = Field(default=2.0, gt=0)
+    readiness_total_timeout_seconds: float = Field(default=3.0, gt=0)
 
     @model_validator(mode='after')
     def validate_backends(self) -> Self:
@@ -69,6 +92,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 'Azurite storage requires a blob connection string'
             )
+        if self.traces_enabled and self.traces_exporter == 'none':
+            raise ValueError('enabled traces require a configured exporter')
         return self
 
     model_config = SettingsConfigDict(

@@ -89,10 +89,43 @@ docker compose stop postgres rabbitmq azurite
 | `POST` | `/v1/documents` | `202` após arquivo, documento e outbox seguros |
 | `GET` | `/v1/documents/{document_id}` | metadados privados ou `404` |
 | `GET` | `/health/live` | vida do processo |
+| `GET` | `/health/ready` | banco e storage aptos para ingestão |
+| `GET` | `/metrics` | métricas Prometheus da API |
 
 As respostas e eventos nunca incluem binário, caminho físico, URL pública,
-connection string ou credencial. Readiness, métricas e traces pertencem à
-Etapa 7 e ainda não foram antecipados.
+connection string ou credencial. O RabbitMQ e os exporters não participam da
+readiness da API porque a outbox preserva eventos aceitos.
+
+## Observabilidade
+
+API e worker emitem logs JSON com `correlation_id`, `trace_id` e `span_id`.
+O worker expõe métricas e saúde em `127.0.0.1:9001` por padrão. Traces ficam
+desativados no modo simples; para exportar ao Tempo local, configure:
+
+```dotenv
+DOCPIPE_INGESTION_TRACES_ENABLED=true
+DOCPIPE_INGESTION_TRACES_EXPORTER=otlp
+DOCPIPE_INGESTION_OTLP_ENDPOINT=http://127.0.0.1:4318
+```
+
+Inicie somente a stack de observabilidade, sem as dependências do laboratório:
+
+```bash
+docker compose -f docker-compose.observability.yml \
+  --profile observability up -d --wait
+```
+
+Prometheus fica em `127.0.0.1:9090`, Grafana em `127.0.0.1:3000` e Tempo
+recebe OTLP HTTP em `127.0.0.1:4318`. O dashboard provisionado é
+`DocPipe Ingestion Overview`. Para diagnóstico por correlação:
+
+```bash
+uv run python -m docpipe_ingestion.diagnostics CORRELATION_UUID
+```
+
+O utilitário é somente leitura e não imprime payload, nome de arquivo,
+checksum ou chave de storage. Consulte `docs/OBSERVABILITY.md` para consultas,
+catálogos e limitações.
 
 ## Testes e qualidade
 
@@ -111,6 +144,7 @@ DOCPIPE_POSTGRESQL_INTEGRATION=1 uv run pytest -m postgresql
 DOCPIPE_AZURITE_INTEGRATION=1 uv run pytest -m azurite
 DOCPIPE_RABBITMQ_INTEGRATION=1 uv run pytest -m rabbitmq
 DOCPIPE_STACK_INTEGRATION=1 uv run pytest -m stack
+DOCPIPE_OBSERVABILITY_INTEGRATION=1 uv run pytest -m observability
 ```
 
 Os testes usam somente dados sintéticos. Consulte `docs/DESIGN.md` para as

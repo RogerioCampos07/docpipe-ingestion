@@ -144,6 +144,7 @@ class OutboxEvent:
     attempts: int = 0
     last_error: str | None = None
     next_attempt_at: datetime | None = None
+    trace_context: dict[str, str] | None = None
 
     def __post_init__(self) -> None:
         _validate_uuid(self.id, field_name='id')
@@ -151,6 +152,12 @@ class OutboxEvent:
         if not self.event_type:
             raise DomainValidationError('event_type cannot be empty')
         _validate_json(self.payload)
+        if self.trace_context is not None:
+            allowed = {'traceparent', 'tracestate'}
+            if not set(self.trace_context) <= allowed:
+                raise DomainValidationError(
+                    'trace context contains unsafe keys'
+                )
         created_at = ensure_utc(self.created_at, field_name='created_at')
         published_at = self.published_at
         next_attempt_at = self.next_attempt_at

@@ -4,6 +4,7 @@ from typing import Protocol, cast
 from uuid import UUID
 
 from fastapi import HTTPException, Request, status
+from opentelemetry.sdk.trace import TracerProvider
 from sqlalchemy import Engine
 
 from docpipe_ingestion.application.errors import (
@@ -26,9 +27,14 @@ from docpipe_ingestion.infrastructure.database.engine import (
     create_database_engine,
     create_session_factory,
 )
+from docpipe_ingestion.infrastructure.database.outbox_statistics import (
+    OutboxStatistics,
+    read_outbox_statistics,
+)
 from docpipe_ingestion.infrastructure.database.unit_of_work import (
     SqlAlchemyUnitOfWork,
 )
+from docpipe_ingestion.infrastructure.observability.metrics import Metrics
 from docpipe_ingestion.infrastructure.settings import Settings
 
 
@@ -59,11 +65,15 @@ class ApplicationServiceProvider:
         self,
         settings: Settings,
         services: ApplicationServices | None = None,
+        metrics: Metrics | None = None,
+        tracer_provider: TracerProvider | None = None,
     ) -> None:
         self._settings = settings
         self._services = services
         self._owns_services = services is None
         self._lock = Lock()
+        self._metrics = metrics
+        self._tracer_provider = tracer_provider
         self._engine: Engine | None = None
         self._session_factory: SessionFactory | None = None
         self._ingest_document: IngestDocumentUseCase | None = None
@@ -78,7 +88,10 @@ class ApplicationServiceProvider:
 
     def _unit_of_work_factory(self) -> SqlAlchemyUnitOfWork:
         return SqlAlchemyUnitOfWork(
-            cast(SessionFactory, self._session_factory)
+            cast(SessionFactory, self._session_factory),
+            metrics=self._metrics,
+            backend=self._settings.database_backend,
+            tracer_provider=self._tracer_provider,
         )
 
     def ingest_document(self) -> IngestDocumentUseCase:
@@ -98,6 +111,9 @@ class ApplicationServiceProvider:
                             self._settings.storage_chunk_size_bytes
                         ),
                     ),
+                    metrics=self._metrics,
+                    tracer_provider=self._tracer_provider,
+                    storage_backend=self._settings.storage_backend,
                 )
         return self._ingest_document
 
@@ -107,7 +123,10 @@ class ApplicationServiceProvider:
         with self._lock:
             if self._get_document is None:
                 self._ensure_database()
-                self._get_document = GetDocument(self._unit_of_work_factory)
+                self._get_document = GetDocument(
+                    self._unit_of_work_factory,
+                    tracer_provider=self._tracer_provider,
+                )
         return self._get_document
 
     def close(self) -> None:
@@ -118,6 +137,14 @@ class ApplicationServiceProvider:
         close = getattr(self._storage, 'close', None)
         if close is not None:
             close()
+
+    def outbox_statistics(self) -> OutboxStatistics:
+        if self._session_factory is None:
+            raise RuntimeError('database has not been initialized')
+        return read_outbox_statistics(
+            self._session_factory,
+            max_attempts=self._settings.outbox_max_attempts,
+        )
 
 
 def _get_service_provider(request: Request) -> ApplicationServiceProvider:
