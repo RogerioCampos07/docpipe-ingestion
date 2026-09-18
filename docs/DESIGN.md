@@ -186,6 +186,21 @@ JSON estruturado com `timestamp`, `level`, `service`, `environment`, `correlatio
 
 Span da requisição e spans filhos para armazenamento, transação no banco e publicação. Propagar W3C Trace Context quando suportado.
 
+### Decisões implementadas na Etapa 7
+
+- `correlation_id` permanece o identificador funcional e é propagado por
+  `ContextVar`; trace e correlação não são derivados um do outro;
+- `document.received.v1` permanece inalterado. O carrier W3C é persistido em
+  coluna privada nullable da outbox e enviado em headers AMQP;
+- a API expõe `/metrics`; o worker possui servidor separado em porta
+  configurável;
+- a readiness da API consulta banco e storage. RabbitMQ e exporters não são
+  dependências de aceitação devido à outbox transacional;
+- Prometheus, Grafana e Tempo formam a stack local opcional. Não são requisito
+  para o modo SQLite e storage local;
+- identificadores individuais aparecem somente em logs e traces quando
+  necessários ao diagnóstico, nunca como labels Prometheus.
+
 ## 14. Implantação
 
 - Imagem Docker executada por usuário não root.

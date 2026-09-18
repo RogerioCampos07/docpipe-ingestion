@@ -118,6 +118,10 @@ automaticamente.
 
 **Saída verificável:** uma ingestão pode ser acompanhada em logs, métricas e trace sem expor conteúdo.
 
+**Estado:** implementada com logs JSON correlacionados, métricas separadas da
+API e do worker, traces OTLP, contexto W3C privado na outbox, readiness de banco
+e storage e stack opcional Prometheus/Grafana/Tempo.
+
 ## Etapa 8 — Container e Kubernetes
 
 **Objetivo:** executar e escalar o serviço no laboratório.
