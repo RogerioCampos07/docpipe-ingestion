@@ -27,25 +27,27 @@ O serviço deve validar o documento antes de aceitá-lo.
 
 ### RF-003 — Armazenar original
 
-O serviço deve preservar o arquivo original no diretório local
-`dataset/documents/`.
+O serviço deve preservar o arquivo original em storage local ou no container
+privado do Azurite, conforme configuração.
 
 **Critérios de aceite**
 
 - o nome físico é criado pelo sistema e não usa diretamente o nome original;
 - a gravação é realizada por streaming;
-- o caminho resolvido permanece dentro de `dataset/documents/`;
+- no backend local, o caminho resolvido permanece em `dataset/documents/`;
+- no Azurite, a chave lógica é usada em container sem acesso público;
 - o diretório não é exposto como conteúdo estático pela API;
 - falha de armazenamento não produz uma resposta de sucesso.
 
 ### RF-004 — Registrar metadados
 
-O serviço deve registrar os metadados necessários em seu próprio banco SQLite.
+O serviço deve registrar os metadados necessários em SQLite ou PostgreSQL,
+conforme configuração.
 
 **Critérios de aceite**
 
 - registra UUID, nome sanitizado, tipo, tamanho, SHA-256, chave do objeto, estado e horários UTC;
-- o schema é criado e evoluído por migrations compatíveis com SQLite;
+- o schema é criado por migrations compatíveis com SQLite e PostgreSQL;
 - o conteúdo binário não é salvo no banco relacional.
 
 ### RF-005 — Calcular integridade
@@ -69,9 +71,6 @@ O serviço deve produzir `document.received.v1` após a persistência do documen
 - o publicador confirma a entrega antes de marcar o evento como publicado;
 - falhas temporárias utilizam retry com backoff;
 - a solução assume entrega pelo menos uma vez.
-
-**Estado:** implementado com RabbitMQ no laboratório local e publicador
-executado separadamente da API.
 
 ### RF-007 — Consultar estado
 
@@ -109,6 +108,8 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 - O domínio não deve depender diretamente de SQLite nem do sistema de arquivos.
 - A evolução para múltiplas réplicas exige PostgreSQL e armazenamento de objetos
   compartilhado ou soluções equivalentes.
+- Na Etapa 6, o armazenamento compartilhado deve ser validado localmente com
+  Azurite, sem exigir conta ou recursos Azure.
 
 ### RNF-003 — Confiabilidade
 
@@ -139,6 +140,9 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
   sistema de arquivos, do SDK de Azure ou de RabbitMQ.
 - A configuração deve permitir trocar banco e storage sem alterar regras de
   negócio.
+- O adaptador de objetos deve operar contra o Azurite no ambiente local e
+  preservar compatibilidade com a API do Azure Blob Storage para uma possível
+  implantação futura.
 - A aplicação deve ser empacotada em container; `dataset/` deve usar volume
   persistente quando a primeira versão for executada em container.
 
@@ -154,6 +158,10 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 - Cada microserviço do DocPipe possui banco próprio; o Ingestion não compartilha tabelas.
 - A primeira versão usa SQLite e armazenamento em `dataset/documents/`.
 - A primeira versão é limitada a uma única réplica com escrita.
+- A Etapa 6 usa PostgreSQL e Azurite no laboratório local; ela não exige nem
+  cria recursos Azure.
+- Azure Blob Storage real e Azure Service Bus permanecem fora do escopo dessa
+  etapa.
 - O serviço não executa OCR, classificação ou extração.
 - A primeira versão recebe apenas um arquivo por requisição.
 - Não há armazenamento público de documentos.
