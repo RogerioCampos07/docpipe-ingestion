@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     max_file_size_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
     storage_chunk_size_bytes: int = Field(default=64 * 1024, ge=8)
     incomplete_file_age_seconds: int = Field(default=60 * 60, gt=0)
+    rabbitmq_url: str = 'amqp://docpipe:docpipe@localhost:5672/docpipe'
+    rabbitmq_exchange: str = 'docpipe.events'
+    rabbitmq_queue: str = 'docpipe.document.received.v1'
+    rabbitmq_routing_key: str = 'document.received.v1'
+    rabbitmq_timeout_seconds: float = Field(default=5.0, gt=0)
+    outbox_max_attempts: int = Field(default=5, gt=0)
+    outbox_backoff_seconds: float = Field(default=1.0, gt=0)
+    outbox_batch_size: int = Field(default=50, gt=0)
+    outbox_polling_seconds: float = Field(default=1.0, gt=0)
 
     model_config = SettingsConfigDict(
         env_file='.env',

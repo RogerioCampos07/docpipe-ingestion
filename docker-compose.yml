@@ -1,0 +1,22 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4.1.4-management
+    hostname: ${RABBITMQ_HOSTNAME:-docpipe-rabbitmq}
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-docpipe}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-docpipe}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-docpipe}
+    ports:
+      - "${RABBITMQ_BIND_ADDRESS:-127.0.0.1}:${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_BIND_ADDRESS:-127.0.0.1}:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-mnesia-data:/var/lib/rabbitmq/mnesia
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  rabbitmq-mnesia-data:
