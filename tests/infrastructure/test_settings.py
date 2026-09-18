@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from docpipe_ingestion.infrastructure.settings import Settings
 
 DEFAULT_SQLITE_TIMEOUT_SECONDS = 5.0
+DEFAULT_WORKER_METRICS_PORT = 9001
 
 
 def test_settings_have_safe_local_defaults(
@@ -68,3 +69,17 @@ def test_local_storage_does_not_require_blob_configuration() -> None:
 def test_azurite_requires_blob_connection_string() -> None:
     with pytest.raises(ValidationError):
         Settings(storage_backend='azurite', blob_connection_string=None)
+
+
+def test_enabled_traces_require_exporter() -> None:
+    with pytest.raises(ValidationError):
+        Settings(traces_enabled=True, traces_exporter='none')
+
+
+def test_observability_defaults_do_not_require_external_services() -> None:
+    settings = Settings(environment='test')
+
+    assert settings.metrics_enabled is True
+    assert settings.traces_enabled is False
+    assert settings.traces_exporter == 'none'
+    assert settings.worker_metrics_port == DEFAULT_WORKER_METRICS_PORT
