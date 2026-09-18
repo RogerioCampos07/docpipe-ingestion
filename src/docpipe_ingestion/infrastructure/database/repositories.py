@@ -42,6 +42,7 @@ def _to_outbox_event(model: OutboxEventModel) -> OutboxEvent:
         published_at=model.published_at,
         attempts=model.attempts,
         last_error=model.last_error,
+        next_attempt_at=model.next_attempt_at,
     )
 
 
@@ -98,6 +99,7 @@ class SqlAlchemyOutboxEventRepository:
                 published_at=event.published_at,
                 attempts=event.attempts,
                 last_error=event.last_error,
+                next_attempt_at=event.next_attempt_at,
             )
         )
 
@@ -110,6 +112,8 @@ class SqlAlchemyOutboxEventRepository:
         *,
         limit: int,
         max_attempts: int,
+        eligible_at: datetime | None = None,
+        lock: bool = False,
     ) -> list[OutboxEvent]:
         statement = (
             select(OutboxEventModel)
@@ -118,10 +122,23 @@ class SqlAlchemyOutboxEventRepository:
             .order_by(OutboxEventModel.created_at, OutboxEventModel.id)
             .limit(limit)
         )
+        if eligible_at is not None:
+            statement = statement.where(
+                (OutboxEventModel.next_attempt_at.is_(None))
+                | (OutboxEventModel.next_attempt_at <= eligible_at)
+            )
+        if lock:
+            statement = statement.with_for_update(skip_locked=True)
         models = self._session.scalars(statement)
         return [_to_outbox_event(model) for model in models]
 
-    def record_failure(self, event_id: UUID, error: str) -> None:
+    def record_failure(
+        self,
+        event_id: UUID,
+        error: str,
+        *,
+        next_attempt_at: datetime | None = None,
+    ) -> None:
         self._session.execute(
             update(OutboxEventModel)
             .where(OutboxEventModel.id == event_id)
@@ -129,6 +146,7 @@ class SqlAlchemyOutboxEventRepository:
             .values(
                 attempts=OutboxEventModel.attempts + 1,
                 last_error=error[:500],
+                next_attempt_at=next_attempt_at,
             )
         )
 
@@ -139,6 +157,7 @@ class SqlAlchemyOutboxEventRepository:
         event.attempts += 1
         event.last_error = None
         event.published_at = published_at
+        event.next_attempt_at = None
         self._session.execute(
             update(DocumentModel)
             .where(DocumentModel.id == event.aggregate_id)

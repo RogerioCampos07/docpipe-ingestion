@@ -94,3 +94,8 @@ class OutboxEventModel(Base):
         nullable=False,
     )
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(),
+        nullable=True,
+        index=True,
+    )

@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import Event
 from time import sleep
 
@@ -46,41 +46,45 @@ class OutboxPublisher:
 
     def process_batch(self) -> int:
         """Publish at most one configured batch and return successes."""
-        with self._unit_of_work_factory() as unit_of_work:
-            events = unit_of_work.outbox_events.list_pending(
-                limit=self._settings.batch_size,
-                max_attempts=self._settings.max_attempts,
-            )
         published = 0
-        for event in events:
-            try:
-                self._validate_and_publish(event)
-            except Exception as error:
-                summary = type(error).__name__
-                with self._unit_of_work_factory() as unit_of_work:
-                    unit_of_work.outbox_events.record_failure(
-                        event.id,
-                        summary,
-                    )
-                    unit_of_work.commit()
-                logger.warning(
-                    'outbox publication failed event_id=%s '
-                    'attempt=%d error=%s',
-                    event.id,
-                    event.attempts + 1,
-                    summary,
+        for _ in range(self._settings.batch_size):
+            with self._unit_of_work_factory() as unit_of_work:
+                now = self._clock()
+                events = unit_of_work.outbox_events.list_pending(
+                    limit=1,
+                    max_attempts=self._settings.max_attempts,
+                    eligible_at=now,
+                    lock=True,
                 )
-                self._sleep(
-                    min(
+                if not events:
+                    break
+                event = events[0]
+                try:
+                    self._validate_and_publish(event)
+                except Exception as error:
+                    summary = type(error).__name__
+                    delay = min(
                         self._settings.backoff_seconds * (2**event.attempts),
                         60.0,
                     )
-                )
-                continue
-            with self._unit_of_work_factory() as unit_of_work:
+                    unit_of_work.outbox_events.record_failure(
+                        event.id,
+                        summary,
+                        next_attempt_at=now + timedelta(seconds=delay),
+                    )
+                    unit_of_work.commit()
+                    logger.warning(
+                        'outbox publication failed event_id=%s '
+                        'attempt=%d error=%s',
+                        event.id,
+                        event.attempts + 1,
+                        summary,
+                    )
+                    self._sleep(delay)
+                    break
                 unit_of_work.outbox_events.mark_published(
                     event.id,
-                    self._clock(),
+                    now,
                 )
                 unit_of_work.commit()
             published += 1

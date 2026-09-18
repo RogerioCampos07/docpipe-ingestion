@@ -143,6 +143,7 @@ class OutboxEvent:
     published_at: datetime | None = None
     attempts: int = 0
     last_error: str | None = None
+    next_attempt_at: datetime | None = None
 
     def __post_init__(self) -> None:
         _validate_uuid(self.id, field_name='id')
@@ -152,6 +153,7 @@ class OutboxEvent:
         _validate_json(self.payload)
         created_at = ensure_utc(self.created_at, field_name='created_at')
         published_at = self.published_at
+        next_attempt_at = self.next_attempt_at
         if published_at is not None:
             published_at = ensure_utc(
                 published_at,
@@ -165,3 +167,9 @@ class OutboxEvent:
             raise DomainValidationError('attempts cannot be negative')
         object.__setattr__(self, 'created_at', created_at)
         object.__setattr__(self, 'published_at', published_at)
+        if next_attempt_at is not None:
+            next_attempt_at = ensure_utc(
+                next_attempt_at,
+                field_name='next_attempt_at',
+            )
+        object.__setattr__(self, 'next_attempt_at', next_attempt_at)

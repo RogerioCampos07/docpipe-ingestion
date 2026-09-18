@@ -1,6 +1,8 @@
 from logging.config import fileConfig
+from typing import Literal
 
 from alembic import context
+from sqlalchemy.engine import make_url
 
 from docpipe_ingestion.infrastructure.database.base import Base
 from docpipe_ingestion.infrastructure.database.engine import (
@@ -20,7 +22,14 @@ target_metadata = Base.metadata
 def _settings() -> Settings:
     configured_url = config.get_main_option('sqlalchemy.url')
     if configured_url:
-        return Settings(database_url=configured_url)
+        backend = make_url(configured_url).get_backend_name()
+        database_backend: Literal['sqlite', 'postgresql'] = (
+            'sqlite' if backend == 'sqlite' else 'postgresql'
+        )
+        return Settings(
+            database_backend=database_backend,
+            database_url=configured_url,
+        )
     return Settings()
 
 

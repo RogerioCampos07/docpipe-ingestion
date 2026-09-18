@@ -52,8 +52,12 @@ class StubEvents:
         *,
         limit: int,
         max_attempts: int,
+        eligible_at: datetime | None = None,
+        lock: bool = False,
     ) -> list[OutboxEvent]:
-        assert limit == BATCH_SIZE
+        assert limit == 1
+        assert eligible_at == NOW
+        assert lock
         return (
             []
             if self.published or self.event.attempts >= max_attempts
@@ -65,8 +69,15 @@ class StubEvents:
         assert published_at == NOW
         self.published = True
 
-    def record_failure(self, event_id: UUID, error: str) -> None:
+    def record_failure(
+        self,
+        event_id: UUID,
+        error: str,
+        *,
+        next_attempt_at: datetime | None = None,
+    ) -> None:
         assert event_id == EVENT_ID
+        assert next_attempt_at is not None
         self.failures.append(error)
 
 
