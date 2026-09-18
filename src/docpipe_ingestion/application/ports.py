@@ -42,6 +42,29 @@ class OutboxEventRepository(Protocol):
 
     def get(self, event_id: UUID) -> OutboxEvent | None: ...
 
+    def list_pending(
+        self,
+        *,
+        limit: int,
+        max_attempts: int,
+    ) -> list[OutboxEvent]: ...
+
+    def record_failure(self, event_id: UUID, error: str) -> None: ...
+
+    def mark_published(
+        self,
+        event_id: UUID,
+        published_at: datetime,
+    ) -> None: ...
+
+
+class BrokerPublisher(Protocol):
+    """Confirmed publication independent of a concrete broker."""
+
+    def publish(self, event: OutboxEvent) -> None: ...
+
+    def close(self) -> None: ...
+
 
 class UnitOfWork(Protocol):
     """Atomic persistence boundary for ingestion metadata."""

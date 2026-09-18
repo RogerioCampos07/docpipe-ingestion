@@ -167,6 +167,7 @@ def test_invalid_ingestion_leaves_no_file_or_metadata(
     assert not list(storage.root.glob('*.part'))
     with SqlAlchemyUnitOfWork(session_factory) as unit_of_work:
         assert unit_of_work.documents.get(DOCUMENT_ID) is None
+        assert unit_of_work.outbox_events.get(EVENT_ID) is None
 
 
 def test_database_failure_leaves_discoverable_orphan_without_deleting_it(
