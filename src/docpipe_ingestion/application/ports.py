@@ -47,9 +47,17 @@ class OutboxEventRepository(Protocol):
         *,
         limit: int,
         max_attempts: int,
+        eligible_at: datetime | None = None,
+        lock: bool = False,
     ) -> list[OutboxEvent]: ...
 
-    def record_failure(self, event_id: UUID, error: str) -> None: ...
+    def record_failure(
+        self,
+        event_id: UUID,
+        error: str,
+        *,
+        next_attempt_at: datetime | None = None,
+    ) -> None: ...
 
     def mark_published(
         self,

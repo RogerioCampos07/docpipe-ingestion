@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from docpipe_ingestion.application.errors import StorageError
+from docpipe_ingestion.infrastructure.storage.keys import STORAGE_KEY_PATTERN
 
-_STORAGE_KEY_PATTERN = re.compile(r'[0-9a-f]{32}\.blob')
 _INCOMPLETE_PATTERN = re.compile(r'\.upload-[0-9a-z_-]+\.part')
 
 
@@ -44,7 +44,7 @@ class LocalDocumentStorage:
         return self._root
 
     def _destination(self, storage_key: str) -> Path:
-        if _STORAGE_KEY_PATTERN.fullmatch(storage_key) is None:
+        if STORAGE_KEY_PATTERN.fullmatch(storage_key) is None:
             raise UnsafeStorageKeyError('storage key is not valid')
         destination = (self._root / storage_key).resolve(strict=False)
         if not destination.is_relative_to(self._root):
@@ -105,7 +105,7 @@ class LocalDocumentStorage:
                 for path in self._root.iterdir()
                 if not path.is_symlink()
                 and path.is_file()
-                and _STORAGE_KEY_PATTERN.fullmatch(path.name) is not None
+                and STORAGE_KEY_PATTERN.fullmatch(path.name) is not None
             }
         except OSError as error:
             raise StorageWriteError('local storage listing failed') from error

@@ -6,7 +6,7 @@ O plano é incremental. Cada etapa deve terminar com código executável, testes
 
 **Objetivo:** criar a base mínima e verificável do serviço.
 
-- iniciar o projeto com `uv` e Python 3.14+;
+- iniciar o projeto com `uv` e Python 3.13+;
 - criar estrutura simples para API, domínio, aplicação, infraestrutura e testes;
 - configurar FastAPI, Pydantic Settings e endpoint de liveness;
 - configurar formatter, lint, verificação de tipos e pytest;
@@ -51,7 +51,6 @@ entradas inválidas são rejeitadas sem persistência incorreta.
 
 - implementar `POST /v1/documents`;
 - implementar `GET /v1/documents/{document_id}`;
-- registrar documento e evento pendente na mesma transação antes do `202`;
 - padronizar respostas e erros;
 - criar testes de integração da API;
 - documentar OpenAPI e exemplos.
@@ -61,11 +60,9 @@ RF-005/RF-007 passam nos testes.
 
 ## Etapa 5 — Outbox e mensageria
 
-**Estado:** implementada.
-
 **Objetivo:** publicar eventos sem perder o vínculo com a persistência.
 
-- consumir os eventos pendentes registrados pela ingestão;
+- gravar documento e outbox na mesma transação;
 - definir interface de broker e schema `document.received.v1`;
 - implementar publicador com confirmação, retry e backoff;
 - criar adaptador RabbitMQ para o laboratório local;
@@ -76,18 +73,38 @@ RF-005/RF-007 passam nos testes.
 ## Etapa 6 — Persistência compartilhada para escala
 
 **Objetivo:** remover as limitações de instância única antes dos testes
-distribuídos.
+distribuídos, sem depender de conta ou recursos Azure.
 
-- implementar PostgreSQL mantendo a interface de persistência;
-- implementar Azure Blob Storage;
-- implementar Azure Service Bus, se confirmado como broker de produção;
-- usar Managed Identity quando disponível;
-- manter seleção de adaptadores por configuração;
-- adicionar testes de contrato sem exigir credenciais reais no CI comum.
+- executar PostgreSQL localmente por Docker Compose, mantendo a interface de
+  persistência;
+- executar Azurite localmente por Docker Compose como armazenamento de objetos
+  compartilhado;
+- implementar um adaptador compatível com a API do Azure Blob Storage e
+  validá-lo contra o Azurite;
+- criar container privado, volume persistente e health check para o Azurite;
+- preservar a chave lógica, streaming, checksum e metadados do documento;
+- manter SQLite e storage local disponíveis para testes rápidos;
+- selecionar banco e storage por configuração;
+- manter o RabbitMQ e o contrato `document.received.v1` sem alterações;
+- adicionar testes de contrato compartilhados entre os adaptadores local e de
+  objetos;
+- testar PostgreSQL e Azurite sem exigir conta ou credenciais Azure.
 
 **Saída verificável:** os adaptadores respeitam as mesmas interfaces e a
-aplicação troca SQLite/storage local por PostgreSQL/Blob Storage via
-configuração.
+aplicação troca SQLite/storage local por PostgreSQL/Azurite via configuração.
+Os contratos HTTP e de evento permanecem inalterados, e duas ou mais instâncias
+da aplicação conseguem acessar o mesmo armazenamento de objetos no laboratório
+local.
+
+**Fora do escopo desta etapa:** Azure Blob Storage real, Azure Service Bus,
+Managed Identity, RBAC e criação de qualquer recurso Azure. Uma validação no
+Azure poderá ser planejada posteriormente sem alterar o domínio nem os
+contratos públicos.
+
+**Estado:** implementada localmente com PostgreSQL, Azurite, composição por
+configuração, coordenação concorrente da outbox e suítes de integração opt-in.
+O PostgreSQL do laboratório inicia vazio; dados SQLite não são migrados
+automaticamente.
 
 ## Etapa 7 — Observabilidade
 

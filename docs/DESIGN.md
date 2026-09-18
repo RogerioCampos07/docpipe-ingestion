@@ -13,7 +13,8 @@ O DocPipe processa documentos corporativos por meio de microserviços independen
 - preservar fronteiras que permitam trocar SQLite e storage local antes da
   escala horizontal;
 - produzir evidências de desempenho e observabilidade para o TCC;
-- manter independência entre infraestrutura local e Azure.
+- validar localmente o armazenamento compartilhado sem depender de uma conta
+  Azure.
 
 ## 3. Fora do escopo
 
@@ -72,11 +73,6 @@ configurável por variável de ambiente. O serviço deve habilitar chaves
 estrangeiras e configurar timeout de bloqueio. O modo WAL será usado quando
 validado pelos testes do ambiente alvo.
 
-Os testes locais validam WAL para bancos baseados em arquivo, portanto ele fica
-habilitado por padrão e pode ser desativado por configuração. Bancos em memória
-mantêm o modo próprio do SQLite. Chaves estrangeiras e `busy_timeout` são
-configurados em toda nova conexão.
-
 SQLite atende à primeira versão de instância única. Ele não deve ser apresentado
 como banco adequado para várias réplicas gravando concorrentemente.
 
@@ -114,10 +110,7 @@ como banco adequado para várias réplicas gravando concorrentemente.
 
 ### `POST /v1/documents`
 
-- Entrada: exatamente um campo `file` em `multipart/form-data`. Nesta versão,
-  não há outros metadados de formulário.
-- `X-Correlation-ID` aceita um UUID fornecido pelo cliente; quando ausente, a
-  API gera um UUID. O valor validado é devolvido no mesmo cabeçalho.
+- Entrada: arquivo e metadados opcionais previstos pelo schema.
 - Sucesso: `202 Accepted`.
 - Resposta mínima: `document_id`, `status`, `correlation_id`, `received_at`.
 - Erros esperados: `400` para requisição inválida, `413` para tamanho excedido, `415` para tipo não suportado e `503` quando uma dependência essencial impedir a aceitação segura.
@@ -126,26 +119,9 @@ Repetições causadas por timeout poderão ser controladas posteriormente por `I
 
 ### `GET /v1/documents/{document_id}`
 
-- Retorna `document_id`, `original_name`, `media_type`, `size_bytes`, `sha256`,
-  `status`, `correlation_id`, `created_at` e `updated_at`.
+- Retorna somente metadados pertencentes ao Ingestion.
 - Não devolve o arquivo nem URL pública nesta versão.
-- Não devolve `storage_key` nem o caminho físico do arquivo.
 - Retorna `404` quando o identificador não existe ou não é visível no contexto de acesso.
-
-Erros HTTP usam o mesmo envelope, sem detalhes internos:
-
-```json
-{
-  "error": {
-    "code": "invalid_request",
-    "message": "The request is not valid.",
-    "correlation_id": "uuid"
-  }
-}
-```
-
-Falhas de validação do framework, inclusive UUID malformado e multipart sem o
-campo obrigatório, são normalizadas para `400` neste contrato.
 
 ## 10. Evento `document.received.v1`
 
@@ -179,16 +155,6 @@ O evento não deve conter o conteúdo do arquivo, URL pública nem credencial de
 - Timeouts devem ser explícitos para SQLite e broker.
 - A escrita do arquivo e a transação SQLite não formam uma única transação;
   arquivos órfãos devem ser detectáveis e reconciliáveis.
-- A reconciliação local é diagnóstica: identifica arquivos finais sem metadados
-  e temporários antigos, sem removê-los automaticamente.
-
-Na implementação local, um único publicador consulta lotes SQLite em ordem de
-criação. Cada falha incrementa `attempts` e registra apenas a classe resumida
-do erro; `published_at` e o estado `PUBLISHED` do documento são atualizados na
-mesma transação somente após publisher confirm. O RabbitMQ usa exchange direct
-durável `docpipe.events`, fila durável `docpipe.document.received.v1` e routing
-key `document.received.v1`. Uma queda entre o confirm e o commit SQLite pode
-republicar o mesmo `event_id`, portanto consumidores devem ser idempotentes.
 
 ## 12. Segurança e privacidade
 
@@ -232,15 +198,23 @@ Span da requisição e spans filhos para armazenamento, transação no banco e p
 - Readiness considera dependências necessárias para aceitar documentos com segurança; liveness verifica apenas o processo.
 - Migrações são executadas como tarefa controlada de implantação, não simultaneamente por todas as réplicas.
 
-## 15. Evolução planejada
+## 15. Evolução implementada na Etapa 6
 
-Antes dos experimentos com múltiplas réplicas, substituir:
+Para os experimentos com múltiplas réplicas, foram adicionados:
 
-- SQLite por PostgreSQL;
-- `dataset/documents/` por armazenamento de objetos, como Azure Blob Storage.
+- PostgreSQL como alternativa ao SQLite;
+- armazenamento de objetos compartilhado como alternativa a
+  `dataset/documents/`, usando
+  Azurite no laboratório local.
 
-As trocas devem ocorrer por adaptadores, sem alterar as regras de domínio nem os
-contratos HTTP e de eventos.
+O adaptador de objetos utiliza a API do Azure Blob Storage contra o Azurite.
+Assim, os testes locais não exigem assinatura, credenciais ou recursos Azure.
+O Azure Blob Storage real permanece como destino futuro possível, mas sua
+configuração, autenticação, RBAC e validação não pertencem à Etapa 6 local.
+
+As trocas devem ocorrer por adaptadores, sem alterar as regras de domínio nem
+os contratos HTTP e de eventos. O RabbitMQ permanece como broker nesta etapa;
+uma eventual adoção do Azure Service Bus exige decisão e etapa próprias.
 
 ## 16. Decisões registradas
 
@@ -252,4 +226,29 @@ contratos HTTP e de eventos.
 | Banco privado do serviço | Preserva autonomia e evita acoplamento entre microserviços |
 | Transactional outbox | Reduz a janela de inconsistência entre banco e broker |
 | Broker atrás de adaptador | Permite laboratório local e implantação Azure |
+| Azurite na Etapa 6 | Valida localmente o adaptador de objetos compatível com Azure Blob sem exigir conta Azure |
 | Contratos versionados | Facilita evolução independente de produtores e consumidores |
+
+## 17. Persistência compartilhada local
+
+A Etapa 6 implementa composição explícita dos adaptadores. SQLite e filesystem
+continuam sendo o modo simples. PostgreSQL e Azurite formam o laboratório
+compartilhado; RabbitMQ e os contratos públicos permanecem iguais.
+
+No PostgreSQL, cada worker seleciona um evento elegível com
+`FOR UPDATE SKIP LOCKED`, mantendo o lock durante a publicação confirmada. O
+sucesso atualiza evento e documento antes do commit. A falha incrementa a
+tentativa e persiste `next_attempt_at` com backoff. Uma confirmação do RabbitMQ
+seguida de falha de commit ainda pode produzir duplicidade com o mesmo
+`event_id`; a entrega continua sendo pelo menos uma vez.
+
+O adaptador `AzureBlobDocumentStorage` usa a API Azure Blob contra o Azurite.
+Ele envia blocos limitados, confirma o blob somente após consumir o stream e
+preserva `storage_key`, SHA-256, tamanho e tipo. Marcadores privados em
+`_uploads/` permitem identificar uploads incompletos. A reconciliação compara
+as chaves completas com o banco e apenas relata órfãos; nenhuma falha incerta
+causa exclusão automática.
+
+O Azurite valida as operações de blobs usadas no laboratório. Não valida
+Managed Identity, RBAC, rede privada, disponibilidade, redundância, desempenho
+ou equivalência total com Azure Blob Storage. Azure real permanece futuro.

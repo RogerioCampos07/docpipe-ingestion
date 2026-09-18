@@ -1,256 +1,117 @@
 # DocPipe Ingestion
 
-Microserviço de entrada de documentos do **DocPipe**, projeto acadêmico
-voltado ao estudo de desempenho, escalabilidade e observabilidade em uma
-arquitetura de microserviços.
+Microserviço de entrada do DocPipe. Recebe PDF, PNG ou JPEG, valida e grava o
+original por streaming, persiste metadados e uma outbox transacional e publica
+`document.received.v1` no RabbitMQ. Não executa OCR, classificação ou extração.
 
-## Responsabilidade
+## Modos locais
 
-O Ingestion recebe documentos, valida a requisição, armazena o arquivo original, registra seus metadados e publica um evento para que o restante do pipeline continue de forma assíncrona.
+O modo simples é o padrão: SQLite em `dataset/docpipe-ingestion.db` e arquivos
+privados em `dataset/documents/`. Ele não requer PostgreSQL nem Azurite. O
+RabbitMQ só é necessário para executar o publicador da outbox.
 
-Este serviço **não executa OCR**, não classifica documentos e não extrai dados de negócio.
+O laboratório compartilhado usa PostgreSQL, Azurite Blob e RabbitMQ. O Azurite
+é um emulador local da API do Azure Blob Storage e não requer conta, assinatura
+ou recurso Azure. Ele não valida Managed Identity, RBAC, rede privada,
+disponibilidade ou todas as características do Azure real.
 
-## Fluxo principal
+| Banco | Storage | Uso |
+| --- | --- | --- |
+| SQLite | local | desenvolvimento e testes rápidos |
+| PostgreSQL | local | banco compartilhado com arquivos locais |
+| PostgreSQL | Azurite | laboratório compartilhado completo |
+| SQLite | Azurite | composição suportada, ainda limitada a uma instância SQLite |
 
-1. O cliente envia um documento.
-2. A API valida formato, tamanho e metadados.
-3. O arquivo original é salvo em `dataset/documents/` com nome gerado pelo
-   serviço.
-4. Os metadados e a outbox são persistidos na mesma transação SQLite.
-5. A API devolve `202 Accepted` com o identificador do documento.
-6. Um publicador separado entrega `document.received.v1` ao broker.
+## Preparação
 
-## Escopo da primeira versão
-
-Os itens abaixo descrevem a primeira versão planejada e serão implementados
-incrementalmente conforme o [plano](docs/PLAN.md):
-
-- upload de um arquivo por requisição;
-- formatos iniciais: PDF, PNG e JPEG;
-- validação de tipo e limite de tamanho configurável;
-- cálculo de checksum SHA-256;
-- identificação única do documento;
-- persistência de metadados e estado;
-- armazenamento local do arquivo original em `dataset/documents/`;
-- persistência dos metadados e da outbox em SQLite;
-- publicação confiável do evento de recebimento;
-- consulta de status pelo identificador;
-- health checks, métricas, logs estruturados e traces;
-- testes automatizados e teste de carga.
-
-## Stack da primeira versão
-
-- Python 3.14.4 no ambiente local, com suporte declarado a Python 3.14+
-- FastAPI e Pydantic
-- SQLAlchemy 2 e Alembic
-- SQLite
-- sistema de arquivos local em `dataset/documents/`
-- broker assíncrono com adaptador, permitindo RabbitMQ no laboratório local e Azure Service Bus no ambiente Azure
-- OpenTelemetry e Prometheus
-- pytest e Locust
-- Docker e Kubernetes/AKS
-
-SQLite e o diretório local simplificam a primeira versão e os experimentos em
-uma única instância. PostgreSQL e armazenamento de objetos permanecem como
-evolução necessária antes de executar o serviço com múltiplas réplicas.
-
-Os documentos recebidos e o arquivo SQLite são dados de execução e não devem
-ser versionados no Git.
-
-## Endpoints iniciais
-
-| Estado | Método | Rota | Finalidade |
-| --- | --- | --- | --- |
-| Implementado | `GET` | `/health/live` | Verificar se o processo está ativo |
-| Implementado | `POST` | `/v1/documents` | Receber um documento |
-| Implementado | `GET` | `/v1/documents/{document_id}` | Consultar metadados e estado |
-| Planejado | `GET` | `/health/ready` | Verificar dependências essenciais |
-| Planejado | `GET` | `/metrics` | Expor métricas para Prometheus |
-
-## Estados do documento
-
-- `RECEIVED`: solicitação aceita e registrada;
-- `STORED`: arquivo original persistido;
-- `PUBLISHED`: evento entregue ao broker;
-- `FAILED`: falha definitiva no fluxo de ingestão.
-
-## Documentação do repositório
-
-- [AGENTS.md](AGENTS.md): regras para agentes de código.
-- [DESIGN.md](docs/DESIGN.md): arquitetura e decisões técnicas.
-- [REQUIREMENTS.md](docs/REQUIREMENTS.md): requisitos e critérios de aceite.
-- [PLAN.md](docs/PLAN.md): sequência incremental de implementação.
-
-## Execução
-
-O projeto usa `uv`. Para instalar exatamente as dependências registradas no
-lockfile:
+Requer Python 3.14, `uv` e Docker Compose.
 
 ```bash
 uv sync --locked
-```
-
-As configurações locais opcionais podem partir do arquivo de exemplo:
-
-```bash
 cp .env.example .env
 ```
 
-As configurações introduzidas nas Etapas 2, 3 e 5 são:
+O `.env` é local e não deve ser versionado. Para o modo simples, preserve
+`DOCPIPE_INGESTION_DATABASE_BACKEND=sqlite` e
+`DOCPIPE_INGESTION_STORAGE_BACKEND=local`.
 
-| Variável | Padrão | Finalidade |
-| --- | --- | --- |
-| `DOCPIPE_INGESTION_DATABASE_URL` | `sqlite:///dataset/docpipe-ingestion.db` | Banco privado do serviço |
-| `DOCPIPE_INGESTION_SQLITE_TIMEOUT_SECONDS` | `5` | Espera máxima por bloqueio SQLite |
-| `DOCPIPE_INGESTION_SQLITE_WAL_ENABLED` | `true` | Ativar WAL em bancos SQLite baseados em arquivo |
-| `DOCPIPE_INGESTION_STORAGE_ROOT` | `dataset/documents` | Raiz privada dos documentos |
-| `DOCPIPE_INGESTION_MAX_FILE_SIZE_BYTES` | `10485760` | Limite real de 10 MiB por arquivo |
-| `DOCPIPE_INGESTION_STORAGE_CHUNK_SIZE_BYTES` | `65536` | Memória máxima aproximada por chunk |
-| `DOCPIPE_INGESTION_INCOMPLETE_FILE_AGE_SECONDS` | `3600` | Idade para diagnóstico de temporários abandonados |
-| `DOCPIPE_INGESTION_RABBITMQ_URL` | `amqp://docpipe:docpipe@localhost:5672/docpipe` | Conexão AMQP local; trate senhas reais como segredo |
-| `DOCPIPE_INGESTION_RABBITMQ_EXCHANGE` | `docpipe.events` | Exchange direct durável |
-| `DOCPIPE_INGESTION_RABBITMQ_QUEUE` | `docpipe.document.received.v1` | Fila durável do evento |
-| `DOCPIPE_INGESTION_RABBITMQ_ROUTING_KEY` | `document.received.v1` | Chave do binding |
-| `DOCPIPE_INGESTION_RABBITMQ_TIMEOUT_SECONDS` | `5` | Timeout de conexão e publicação |
-| `DOCPIPE_INGESTION_OUTBOX_MAX_ATTEMPTS` | `5` | Limite de tentativas por evento |
-| `DOCPIPE_INGESTION_OUTBOX_BACKOFF_SECONDS` | `1` | Base do backoff exponencial |
-| `DOCPIPE_INGESTION_OUTBOX_BATCH_SIZE` | `50` | Eventos lidos por ciclo |
-| `DOCPIPE_INGESTION_OUTBOX_POLLING_SECONDS` | `1` | Espera entre ciclos |
+## Laboratório compartilhado
 
-Crie ou atualize o schema antes de executar fluxos que usam persistência:
+Configure no `.env`:
+
+```dotenv
+DOCPIPE_INGESTION_DATABASE_BACKEND=postgresql
+DOCPIPE_INGESTION_DATABASE_URL=postgresql+psycopg://docpipe:docpipe-local@127.0.0.1:5432/docpipe_ingestion
+DOCPIPE_INGESTION_STORAGE_BACKEND=azurite
+DOCPIPE_INGESTION_BLOB_CONNECTION_STRING=DefaultEndpointsProtocol=http;AccountName=docpipe;AccountKey=ZG9jcGlwZS1sb2NhbC1vbmx5LW5vdC1zZWNyZXQ=;BlobEndpoint=http://127.0.0.1:10000/docpipe;
+```
+
+Inicie e confirme as dependências:
+
+```bash
+docker compose pull postgres rabbitmq azurite
+docker compose up -d --wait postgres rabbitmq azurite
+docker compose ps
+```
+
+Inicialize o schema e o container privado:
 
 ```bash
 uv run alembic upgrade head
+uv run python -m docpipe_ingestion.init_blob_storage
 ```
 
-Para validar a reversibilidade da migration inicial em um banco descartável:
+O PostgreSQL do laboratório pode começar vazio; não existe migração automática
+dos dados do SQLite.
+
+Execute API e worker em terminais separados:
 
 ```bash
-uv run alembic downgrade base
-uv run alembic upgrade head
-```
-
-Inicie a API em modo de desenvolvimento:
-
-```bash
-uv run uvicorn docpipe_ingestion.api.app:app --reload
-```
-
-Verifique a liveness em outro terminal:
-
-```bash
-curl http://127.0.0.1:8000/health/live
-```
-
-A resposta esperada é:
-
-```json
-{"status":"ok"}
-```
-
-Antes de usar os endpoints de documentos, aplique as migrations. Envie um
-único PDF, PNG ou JPEG como `multipart/form-data`:
-
-```bash
-curl -i \
-  -H 'X-Correlation-ID: 87654321-4321-8765-4321-876543218765' \
-  -F 'file=@sample.pdf;type=application/pdf' \
-  http://127.0.0.1:8000/v1/documents
-```
-
-O cabeçalho de correlação é opcional. Quando ausente, a API gera um UUID e o
-devolve em `X-Correlation-ID`. Uma ingestão aceita retorna `202`:
-
-```json
-{
-  "document_id": "12345678-1234-5678-1234-567812345678",
-  "status": "STORED",
-  "correlation_id": "87654321-4321-8765-4321-876543218765",
-  "received_at": "2026-09-17T12:00:00Z"
-}
-```
-
-Consulte somente os metadados pertencentes ao Ingestion:
-
-```bash
-curl http://127.0.0.1:8000/v1/documents/12345678-1234-5678-1234-567812345678
-```
-
-Os erros usam um envelope estável e não incluem caminhos, chaves privadas ou
-detalhes das dependências:
-
-```json
-{
-  "error": {
-    "code": "unsupported_file_type",
-    "message": "The uploaded file type is not supported.",
-    "correlation_id": "87654321-4321-8765-4321-876543218765"
-  }
-}
-```
-
-A documentação OpenAPI fica disponível em `/docs` e `/openapi.json`.
-
-## Qualidade
-
-```bash
-uv run task lint
-uv run task format
-uv run task typecheck
-uv run task test
-uv run task typos
-```
-
-Para executar lint, verificação de formatação, tipos, testes e Typos em uma
-única tarefa:
-
-```bash
-uv run task quality
-```
-
-## RabbitMQ e publicador da outbox
-
-O laboratório local usa RabbitMQ com exchange direct `docpipe.events`, fila
-durável `docpipe.document.received.v1` e routing key
-`document.received.v1`. Inicie e aguarde o health check:
-
-```bash
-docker compose pull rabbitmq
-docker compose up -d --wait rabbitmq
+uv run uvicorn docpipe_ingestion.api.app:app --host 127.0.0.1 --port 8000
 uv run python -m docpipe_ingestion.outbox_worker
 ```
 
-O publicador é um processo separado da API. Ele usa publisher confirms, retry
-com backoff e entrega pelo menos uma vez; consumidores devem deduplicar por
-`event_id`. Para executar a integração real:
+Dentro de outro container da rede Compose, use `postgres:5432`,
+`rabbitmq:5672` e `http://azurite:10000/docpipe` nas configurações. Para uma
+aplicação executada diretamente no SBX, use as portas publicadas em
+`127.0.0.1`.
+
+Ao terminar, preserve os volumes:
 
 ```bash
+docker compose stop postgres rabbitmq azurite
+```
+
+## API
+
+| Método | Rota | Resultado |
+| --- | --- | --- |
+| `POST` | `/v1/documents` | `202` após arquivo, documento e outbox seguros |
+| `GET` | `/v1/documents/{document_id}` | metadados privados ou `404` |
+| `GET` | `/health/live` | vida do processo |
+
+As respostas e eventos nunca incluem binário, caminho físico, URL pública,
+connection string ou credencial. Readiness, métricas e traces pertencem à
+Etapa 7 e ainda não foram antecipados.
+
+## Testes e qualidade
+
+```bash
+uv run task lint
+uv run task format-check
+uv run task typecheck
+uv run pytest
+uv run typos
+```
+
+Integrações reais são opt-in:
+
+```bash
+DOCPIPE_POSTGRESQL_INTEGRATION=1 uv run pytest -m postgresql
+DOCPIPE_AZURITE_INTEGRATION=1 uv run pytest -m azurite
 DOCPIPE_RABBITMQ_INTEGRATION=1 uv run pytest -m rabbitmq
-docker compose stop rabbitmq
+DOCPIPE_STACK_INTEGRATION=1 uv run pytest -m stack
 ```
 
-O comando de parada preserva o volume nomeado. Não use `docker compose down
--v` se desejar preservar os dados locais.
-
-## Container da API
-
-Construa e execute a imagem inicial:
-
-```bash
-docker build -t docpipe-ingestion .
-docker run --rm -p 8000:8000 docpipe-ingestion
-```
-
-O Docker Compose desta etapa orquestra somente o RabbitMQ local. A API e o
-publicador podem continuar executando com `uv` no host de desenvolvimento.
-
-## Status
-
-As Etapas 1 a 5 disponibilizam a aplicação FastAPI, configuração por ambiente,
-liveness, domínio de documentos, migrations SQLite, repositórios, validação
-por streaming, SHA-256, armazenamento local atômico e os endpoints de upload e
-consulta. Uma aceitação registra documento e evento pendente na mesma transação
-SQLite.
-
-O publicador da outbox e o RabbitMQ local estão implementados. Persistência
-compartilhada e observabilidade completa permanecem planejadas.
+Os testes usam somente dados sintéticos. Consulte `docs/DESIGN.md` para as
+garantias e limitações da outbox e do armazenamento.

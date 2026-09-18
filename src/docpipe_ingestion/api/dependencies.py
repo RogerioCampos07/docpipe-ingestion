@@ -16,7 +16,11 @@ from docpipe_ingestion.application.ingest_document import (
     IngestDocumentCommand,
     IngestionLimits,
 )
+from docpipe_ingestion.application.ports import DocumentStorage
 from docpipe_ingestion.domain.models import Document
+from docpipe_ingestion.infrastructure.composition import (
+    create_document_storage,
+)
 from docpipe_ingestion.infrastructure.database.engine import (
     SessionFactory,
     create_database_engine,
@@ -26,7 +30,6 @@ from docpipe_ingestion.infrastructure.database.unit_of_work import (
     SqlAlchemyUnitOfWork,
 )
 from docpipe_ingestion.infrastructure.settings import Settings
-from docpipe_ingestion.infrastructure.storage.local import LocalDocumentStorage
 
 
 class IngestDocumentUseCase(Protocol):
@@ -65,6 +68,7 @@ class ApplicationServiceProvider:
         self._session_factory: SessionFactory | None = None
         self._ingest_document: IngestDocumentUseCase | None = None
         self._get_document: GetDocumentUseCase | None = None
+        self._storage: DocumentStorage | None = None
 
     def _ensure_database(self) -> None:
         if self._session_factory is not None:
@@ -83,7 +87,8 @@ class ApplicationServiceProvider:
         with self._lock:
             if self._ingest_document is None:
                 self._ensure_database()
-                storage = LocalDocumentStorage(self._settings.storage_root)
+                storage = create_document_storage(self._settings)
+                self._storage = storage
                 self._ingest_document = IngestDocument(
                     storage=storage,
                     unit_of_work_factory=self._unit_of_work_factory,
@@ -110,6 +115,9 @@ class ApplicationServiceProvider:
             return
         if self._engine is not None:
             self._engine.dispose()
+        close = getattr(self._storage, 'close', None)
+        if close is not None:
+            close()
 
 
 def _get_service_provider(request: Request) -> ApplicationServiceProvider:

@@ -46,7 +46,7 @@ ou escopo do serviço, interrompa a implementação e apresente a divergência.
 
 ## Estado inicial do template
 
-- O ambiente local usa Python `3.14.4`; o projeto aceita Python `>=3.14`.
+- O ambiente local usa Python `3.14.4`; o projeto aceita Python `>=3.13`.
 - Dependências e ambiente virtual são gerenciados com `uv`.
 - `pytest`, `pytest-cov`, `ruff`, `taskipy` e `typos` são dependências de
   desenvolvimento.
@@ -91,8 +91,8 @@ partida e pode deixar de refletir arquivos já evoluídos.
   planejadas até que a etapa correspondente autorize sua adoção.
 - Cada mudança deve ser pequena, verificável e deixar o repositório em estado
   executável quando isso for aplicável à etapa.
-- Não antecipe adaptadores Azure, mensageria, observabilidade completa,
-  Kubernetes ou testes de carga.
+- Não antecipe o adaptador compatível com Azure Blob nem o Azurite,
+  mensageria, observabilidade completa, Kubernetes ou testes de carga.
 - Antes de modificar contratos HTTP, eventos, migrations ou configuração,
   explique o impacto e confirme que a mudança pertence ao escopo solicitado.
 - Registre decisões arquiteturais relevantes no `docs/DESIGN.md` ou, quando fizer
@@ -223,6 +223,8 @@ tipos quando ela estiver configurada no projeto.
 - Só preencha `docker-compose.yml` quando houver serviços locais concretos para
   orquestrar na etapa atual.
 - Nunca copie `.env`, segredos, caches ou artefatos de teste para a imagem.
+- O Azurite pode ser usado localmente, quando autorizado pela Etapa 6, sem
+  criação de recursos Azure externos.
 - Não crie ou altere infraestrutura externa, recursos Azure ou clusters sem
   solicitação explícita.
 

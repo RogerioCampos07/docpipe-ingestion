@@ -1,6 +1,8 @@
 from pathlib import Path
+from typing import Literal
 
 import pytest
+from pydantic import ValidationError
 
 from docpipe_ingestion.infrastructure.settings import Settings
 
@@ -36,3 +38,33 @@ def test_settings_read_prefixed_environment_variables(
     settings = Settings()
 
     assert settings.environment == 'test'
+
+
+@pytest.mark.parametrize(
+    ('database_backend', 'database_url'),
+    [
+        ('sqlite', 'postgresql+psycopg://local'),
+        ('postgresql', 'sqlite:///local.db'),
+        ('postgresql', 'mysql://local'),
+    ],
+)
+def test_settings_reject_mismatched_database_backend(
+    database_backend: Literal['sqlite', 'postgresql'],
+    database_url: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            database_backend=database_backend,
+            database_url=database_url,
+        )
+
+
+def test_local_storage_does_not_require_blob_configuration() -> None:
+    settings = Settings(storage_backend='local', blob_connection_string=None)
+
+    assert settings.storage_backend == 'local'
+
+
+def test_azurite_requires_blob_connection_string() -> None:
+    with pytest.raises(ValidationError):
+        Settings(storage_backend='azurite', blob_connection_string=None)

@@ -6,8 +6,10 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.20.0",
+    "azure-storage-blob>=12.27,<13",
     "fastapi>=0.141.1",
     "pika>=1.4.4",
+    "psycopg[binary]>=3.2,<4",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
     "python-multipart>=0.0.32",
@@ -47,6 +49,9 @@ testpaths = ['tests']
 addopts = '-p no:warnings --strict-config --strict-markers'
 markers = [
     'rabbitmq: integration tests requiring the Docker Compose RabbitMQ service',
+    'postgresql: integration tests requiring Docker Compose PostgreSQL',
+    'azurite: integration tests requiring Docker Compose Azurite',
+    'stack: integration tests requiring all Docker Compose services',
 ]
 
 [tool.mypy]

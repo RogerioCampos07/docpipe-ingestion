@@ -56,7 +56,25 @@ def create_database_engine(settings: Settings) -> Engine:
             'check_same_thread': False,
             'timeout': settings.sqlite_timeout_seconds,
         }
-    engine = create_engine(url, connect_args=connect_args)
+    engine_options: dict[str, object] = {'connect_args': connect_args}
+    if settings.database_backend == 'postgresql':
+        connect_args = {
+            'connect_timeout': settings.postgres_connect_timeout_seconds,
+            'options': (
+                '-c statement_timeout='
+                f'{settings.postgres_statement_timeout_ms} '
+                f'-c lock_timeout={settings.postgres_lock_timeout_ms}'
+            ),
+        }
+        engine_options = {
+            'connect_args': connect_args,
+            'pool_pre_ping': True,
+            'pool_size': settings.postgres_pool_size,
+            'max_overflow': settings.postgres_max_overflow,
+            'pool_timeout': settings.postgres_pool_timeout_seconds,
+            'hide_parameters': True,
+        }
+    engine = create_engine(url, **engine_options)
     if url.get_backend_name() != 'sqlite':
         return engine
 
