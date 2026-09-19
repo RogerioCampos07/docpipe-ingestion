@@ -14,7 +14,11 @@ O DocPipe processa documentos corporativos por meio de microserviços independen
   escala horizontal;
 - produzir evidências de desempenho e observabilidade para o TCC;
 - validar localmente o armazenamento compartilhado sem depender de uma conta
-  Azure.
+  Azure;
+- entregar a `v1.0.0` como laboratório local reproduzível e independente de
+  qualquer cloud provider;
+- preservar adaptadores e contratos que permitam evoluir para serviços Azure
+  na `v1.1.0` sem acoplar o domínio.
 
 ## 3. Fora do escopo
 
@@ -31,8 +35,8 @@ O DocPipe processa documentos corporativos por meio de microserviços independen
 | --- | --- |
 | API FastAPI | Receber requisições, validar metadados e expor consultas |
 | Caso de uso de ingestão | Coordenar checksum, armazenamento, persistência e resposta |
-| Repositório de metadados | Isolar o acesso ao SQLite |
-| Adaptador de storage local | Gravar o original em `dataset/documents/` |
+| Repositório de metadados | Isolar o acesso ao SQLite ou PostgreSQL |
+| Adaptadores de storage | Gravar no storage local ou no Azurite |
 | Tabela outbox | Registrar eventos na mesma transação dos metadados |
 | Publicador de outbox | Entregar eventos pendentes ao broker e registrar tentativas |
 | Broker | Desacoplar o Ingestion dos consumidores posteriores |
@@ -42,9 +46,10 @@ O DocPipe processa documentos corporativos por meio de microserviços independen
 
 1. A API recebe `multipart/form-data` com arquivo e metadados permitidos.
 2. A aplicação verifica tamanho, extensão, `Content-Type` e assinatura conhecida.
-3. Durante o streaming, calcula SHA-256 e grava o arquivo em
-   `dataset/documents/` com uma chave gerada pelo sistema.
-4. Em uma transação SQLite, grava o documento e a mensagem na outbox.
+3. Durante o streaming, calcula SHA-256 e grava o arquivo no storage
+   configurado, com uma chave gerada pelo sistema.
+4. Em uma transação no banco configurado, grava o documento e a mensagem na
+   outbox.
 5. Retorna `202 Accepted` com `document_id`, estado e `correlation_id`.
 6. Um publicador separado lê a outbox e envia `document.received.v1` ao broker.
 7. Após confirmação do broker, marca a mensagem como publicada.
@@ -73,8 +78,9 @@ configurável por variável de ambiente. O serviço deve habilitar chaves
 estrangeiras e configurar timeout de bloqueio. O modo WAL será usado quando
 validado pelos testes do ambiente alvo.
 
-SQLite atende à primeira versão de instância única. Ele não deve ser apresentado
-como banco adequado para várias réplicas gravando concorrentemente.
+SQLite atende ao modo simples de instância única da `v1.0.0`. Ele não deve ser
+apresentado como banco adequado para várias réplicas gravando
+concorrentemente.
 
 ## 8. Modelo de dados inicial
 
@@ -201,17 +207,30 @@ Span da requisição e spans filhos para armazenamento, transação no banco e p
 - identificadores individuais aparecem somente em logs e traces quando
   necessários ao diagnóstico, nunca como labels Prometheus.
 
-## 14. Implantação
+## 14. Implantação da `v1.0.0`
 
 - Imagem Docker executada por usuário não root.
 - Configuração via variáveis de ambiente, validada na inicialização.
 - Segredos fornecidos pela plataforma, nunca incluídos na imagem.
-- A primeira versão executa com uma única réplica e usa volume persistente para
+- O modo simples executa com uma única réplica e usa volume persistente para
   `dataset/` quando estiver em container.
-- A escala horizontal exige substituir SQLite e storage local por serviços
-  compartilhados apropriados.
+- O laboratório compartilhado usa PostgreSQL, Azurite e RabbitMQ locais para
+  permitir múltiplas réplicas da API.
+- Kind single-node é o alvo Kubernetes da `v1.0.0`, adequado ao notebook de
+  8 GB de RAM. API e worker executam em Deployments separados.
+- A imagem é construída localmente e carregada por
+  `kind load docker-image`; nenhum registry externo é obrigatório.
+- Services internos, ConfigMaps, referências a Secrets locais sem valores
+  reais versionados, PersistentVolumeClaims quando necessários, probes e
+  requests/limits conservadores compõem o laboratório.
+- Migrações são executadas de forma controlada por Job. O acesso local usa
+  `kubectl port-forward` ou mecanismo local equivalente.
 - Readiness considera dependências necessárias para aceitar documentos com segurança; liveness verifica apenas o processo.
 - Migrações são executadas como tarefa controlada de implantação, não simultaneamente por todas as réplicas.
+
+O Kind valida os artefatos e o comportamento Kubernetes usados no laboratório,
+mas não reproduz características gerenciadas, disponibilidade, rede ou escala
+do AKS. A `v1.0.0` não é implantação de produção.
 
 ## 15. Evolução implementada na Etapa 6
 
@@ -236,12 +255,17 @@ uma eventual adoção do Azure Service Bus exige decisão e etapa próprias.
 | Decisão | Motivo |
 | --- | --- |
 | Resposta `202 Accepted` | O processamento continua de forma assíncrona |
-| SQLite na primeira versão | Reduz infraestrutura e simplifica o desenvolvimento local |
+| `v1.0.0` independente de cloud | Garante laboratório reproduzível sem conta, assinatura ou recursos externos |
+| SQLite no modo simples | Reduz infraestrutura e simplifica o desenvolvimento local |
 | Arquivos em `dataset/documents/` | Permite validar o fluxo sem serviço externo de storage |
 | Banco privado do serviço | Preserva autonomia e evita acoplamento entre microserviços |
 | Transactional outbox | Reduz a janela de inconsistência entre banco e broker |
-| Broker atrás de adaptador | Permite laboratório local e implantação Azure |
+| PostgreSQL, Azurite e RabbitMQ locais | Fornecem infraestrutura compartilhada para o laboratório da `v1.0.0` |
+| Broker atrás de adaptador | Preserva portabilidade; RabbitMQ continua confirmado na `v1.0.0` |
 | Azurite na Etapa 6 | Valida localmente o adaptador de objetos compatível com Azure Blob sem exigir conta Azure |
+| Kind na Etapa 8 | Permite validar Kubernetes localmente sem registry ou cloud obrigatórios |
+| Azure na `v1.1.0` | Separa a validação local da implantação e integração com serviços gerenciados |
+| Azure Service Bus não decidido | Mantém sua possível adoção como avaliação futura |
 | Contratos versionados | Facilita evolução independente de produtores e consumidores |
 
 ## 17. Persistência compartilhada local
@@ -266,4 +290,22 @@ causa exclusão automática.
 
 O Azurite valida as operações de blobs usadas no laboratório. Não valida
 Managed Identity, RBAC, rede privada, disponibilidade, redundância, desempenho
-ou equivalência total com Azure Blob Storage. Azure real permanece futuro.
+ou equivalência total com Azure Blob Storage. A compatibilidade de API não
+significa que a `v1.0.0` foi implantada ou validada no Azure.
+
+## 18. Evolução Azure na `v1.1.0`
+
+A `v1.1.0` concentrará a implantação e integração com AKS, Azure Container
+Registry, Azure Database for PostgreSQL Flexible Server, Azure Blob Storage
+real, Azure Key Vault, Managed Identity, RBAC, rede e endpoints privados,
+ingress, domínio e TLS no Azure. Também ficam nesse backlog infraestrutura
+como código, análise FinOps, políticas de backup, disponibilidade e
+recuperação e a validação da aplicação no ambiente Azure. Azure Monitor ou
+Application Insights dependem de aprovação. A possível substituição do
+RabbitMQ por Azure Service Bus continua em avaliação e não é uma decisão
+arquitetural confirmada.
+
+Os adaptadores existentes preservam portabilidade, mas nem Azurite equivale ao
+Azure Blob Storage real, nem Kind equivale ao AKS. Autenticação, autorização,
+rede, disponibilidade, desempenho e operação dos serviços gerenciados somente
+podem ser validados na `v1.1.0`.

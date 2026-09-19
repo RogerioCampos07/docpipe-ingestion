@@ -72,9 +72,11 @@ partida e pode deixar de refletir arquivos já evoluídos.
   notificações, interface web ou autenticação própria neste repositório.
 - Não acesse diretamente bancos ou tabelas de outros microserviços.
 - O banco deste serviço é privado ao Ingestion.
-- Na primeira versão, use SQLite para os metadados e a outbox.
-- Na primeira versão, armazene os arquivos em `dataset/documents/` por meio de
-  uma abstração de storage local.
+- Na `v1.0.0`, preserve o modo simples com SQLite para metadados e outbox e o
+  modo de laboratório com PostgreSQL compartilhado.
+- Na `v1.0.0`, preserve o storage local em `dataset/documents/` para execução
+  simples e o Azurite como armazenamento de objetos compartilhado no
+  laboratório.
 - Não versione documentos recebidos nem o arquivo do banco SQLite. Preserve no
   Git apenas os diretórios vazios necessários, quando aplicável.
 - Não devolva o binário, URL pública ou credencial de armazenamento nos
@@ -91,8 +93,13 @@ partida e pode deixar de refletir arquivos já evoluídos.
   planejadas até que a etapa correspondente autorize sua adoção.
 - Cada mudança deve ser pequena, verificável e deixar o repositório em estado
   executável quando isso for aplicável à etapa.
-- Não antecipe o adaptador compatível com Azure Blob nem o Azurite,
-  mensageria, observabilidade completa, Kubernetes ou testes de carga.
+- Não antecipe recursos de etapas posteriores. As Etapas 1 a 7 estão
+  concluídas; durante as Etapas 8 a 10, implemente somente o laboratório local
+  necessário à `v1.0.0`.
+- O alvo Kubernetes da Etapa 8 é um cluster Kind local. Não introduza AKS,
+  Azure Container Registry nem qualquer recurso Azure nas Etapas 8 a 10.
+- Integrações e implantação em serviços Azure pertencem ao backlog da
+  `v1.1.0`; Azure Service Bus permanece uma decisão futura, não confirmada.
 - Antes de modificar contratos HTTP, eventos, migrations ou configuração,
   explique o impacto e confirme que a mudança pertence ao escopo solicitado.
 - Registre decisões arquiteturais relevantes no `docs/DESIGN.md` ou, quando fizer
@@ -225,6 +232,12 @@ tipos quando ela estiver configurada no projeto.
 - Nunca copie `.env`, segredos, caches ou artefatos de teste para a imagem.
 - O Azurite pode ser usado localmente, quando autorizado pela Etapa 6, sem
   criação de recursos Azure externos.
+- A `v1.0.0` deve ser completamente executável e reproduzível localmente, sem
+  conta, assinatura ou recursos de cloud provider.
+- O Kubernetes oficial da `v1.0.0` é Kind single-node, dimensionado para o
+  notebook de 8 GB de RAM; Kind não deve ser descrito como equivalente ao AKS.
+- O Azurite usa APIs compatíveis com Azure Blob Storage, mas não comprova
+  implantação nem validação no Azure.
 - Não crie ou altere infraestrutura externa, recursos Azure ou clusters sem
   solicitação explícita.
 

@@ -2,6 +2,11 @@
 
 O plano é incremental. Cada etapa deve terminar com código executável, testes e documentação atualizada. O Codex deve implementar apenas a etapa solicitada.
 
+As Etapas 1 a 7 estão concluídas e integradas à branch principal. As Etapas 8
+a 10 completam a `v1.0.0`, uma entrega local reproduzível sem conta,
+assinatura ou recursos de cloud provider. Implantação e integração com serviços
+Azure pertencem ao roadmap da `v1.1.0`.
+
 ## Etapa 1 — Fundação do repositório
 
 **Objetivo:** criar a base mínima e verificável do serviço.
@@ -14,6 +19,8 @@ O plano é incremental. Cada etapa deve terminar com código executável, testes
 - documentar comandos locais no `README.md`.
 
 **Saída verificável:** aplicação inicia, `/health/live` responde e pipeline local de qualidade passa.
+
+**Estado:** concluída.
 
 ## Etapa 2 — Domínio e persistência de metadados
 
@@ -28,6 +35,8 @@ O plano é incremental. Cada etapa deve terminar com código executável, testes
 - garantir horários UTC e UUIDs.
 
 **Saída verificável:** migrations sobem em banco vazio e os testes gravam/consultam documentos e eventos outbox.
+
+**Estado:** concluída.
 
 ## Etapa 3 — Validação e armazenamento local
 
@@ -45,9 +54,11 @@ O plano é incremental. Cada etapa deve terminar com código executável, testes
 **Saída verificável:** arquivo válido é armazenado em `dataset/documents/` e
 entradas inválidas são rejeitadas sem persistência incorreta.
 
+**Estado:** concluída.
+
 ## Etapa 4 — API de documentos
 
-**Objetivo:** disponibilizar o contrato HTTP da primeira versão.
+**Objetivo:** disponibilizar o contrato HTTP versionado da `v1.0.0`.
 
 - implementar `POST /v1/documents`;
 - implementar `GET /v1/documents/{document_id}`;
@@ -57,6 +68,8 @@ entradas inválidas são rejeitadas sem persistência incorreta.
 
 **Saída verificável:** contratos de `docs/DESIGN.md` e critérios RF-001 a
 RF-005/RF-007 passam nos testes.
+
+**Estado:** concluída.
 
 ## Etapa 5 — Outbox e mensageria
 
@@ -69,6 +82,8 @@ RF-005/RF-007 passam nos testes.
 - testar indisponibilidade, duplicidade e reinício.
 
 **Saída verificável:** falha do broker mantém o evento pendente e a recuperação publica sem perda.
+
+**Estado:** concluída.
 
 ## Etapa 6 — Persistência compartilhada para escala
 
@@ -122,45 +137,113 @@ automaticamente.
 API e do worker, traces OTLP, contexto W3C privado na outbox, readiness de banco
 e storage e stack opcional Prometheus/Grafana/Tempo.
 
-## Etapa 8 — Container e Kubernetes
+## Etapa 8 — Containers e Kubernetes local com Kind
 
-**Objetivo:** executar e escalar o serviço no laboratório.
+**Objetivo:** executar e escalar o laboratório oficial da `v1.0.0` em Kind,
+sem dependência de registry externo ou recursos Azure.
 
-- endurecer Dockerfile com usuário não root e imagem enxuta;
-- criar manifests ou Helm chart para API e publicador;
-- configurar recursos, probes, ConfigMap e referências a Secrets;
-- preparar autoscaling da API;
-- definir execução controlada das migrations.
+- endurecer o Dockerfile com usuário não root e imagem enxuta;
+- criar um cluster Kind single-node adequado ao notebook com 8 GB de RAM;
+- fixar a versão do node image do Kind durante a implementação;
+- construir localmente a imagem do DocPipe Ingestion e carregá-la com
+  `kind load docker-image`;
+- manter manifests Kubernetes como requisito; Helm ou Kustomize são opcionais,
+  não obrigatórios;
+- executar API e worker em Deployments separados;
+- disponibilizar PostgreSQL, RabbitMQ e Azurite no laboratório por Services
+  internos;
+- configurar ConfigMaps, referências a Secrets locais sem valores reais
+  versionados e PersistentVolumeClaims quando necessários;
+- configurar liveness e readiness probes e requests/limits conservadores;
+- executar migrations de forma controlada por Job;
+- declarar a escalabilidade da API e testar uma e múltiplas réplicas;
+- permitir acesso por `kubectl port-forward` ou mecanismo local equivalente;
+- ativar a stack de observabilidade somente quando necessária;
+- documentar comandos reproduzíveis para criar, validar e remover o cluster.
 
-**Saída verificável:** implantação em Kubernetes fica saudável e suporta
-múltiplas réplicas usando os adaptadores compartilhados da Etapa 6.
+**Saída verificável:** o cluster Kind single-node pode ser recriado localmente,
+recebe a imagem sem registry externo, executa API e worker saudáveis e permite
+validar uma e múltiplas réplicas da API sobre PostgreSQL, Azurite e RabbitMQ.
 
-## Etapa 9 — Testes de carga e resiliência
+**Fora do escopo:** AKS, Azure Container Registry, cloud load balancer, domínio
+ou TLS públicos, quaisquer recursos Azure, múltiplos nós obrigatórios e
+infraestrutura como código de cloud. Kind não deve ser apresentado como
+equivalente ao AKS nem como ambiente de produção.
 
-**Objetivo:** produzir evidências reproduzíveis para o TCC.
+**Estado:** planejada para a `v1.0.0`.
 
-- criar dataset sintético pequeno reutilizável;
+## Etapa 9 — Testes locais de carga e resiliência no Kind
+
+**Objetivo:** produzir no Kind evidências reproduzíveis da `v1.0.0` para o TCC.
+
+- criar dataset sintético pequeno e reutilizável;
 - implementar cenários Locust de upload e consulta;
-- executar baseline local com uma réplica, SQLite e storage local;
-- executar novo baseline com PostgreSQL e armazenamento de objetos;
-- repetir com escalabilidade horizontal;
-- testar broker indisponível e recuperação da outbox;
-- registrar CPU, memória, throughput, erro e p50/p95/p99.
+- executar baseline com uma réplica da API;
+- repetir com múltiplas réplicas e comparar throughput, sem definir metas ou
+  thresholds antes do baseline;
+- registrar p50, p95, p99, taxa de erro, CPU e memória;
+- observar backlog, tentativas, publicação e recuperação da outbox;
+- testar RabbitMQ indisponível e sua recuperação;
+- testar separadamente reinício da API e reinício do worker;
+- testar indisponibilidade temporária de PostgreSQL ou Azurite e recuperação;
+- verificar a persistência dos dados durante os cenários de resiliência;
+- coletar métricas Prometheus e traces OpenTelemetry;
+- versionar scripts e documentar ambiente, dataset, parâmetros e resultados
+  necessários à reprodução.
 
-**Saída verificável:** scripts, parâmetros, ambiente e resultados permitem repetir e comparar os experimentos.
+**Saída verificável:** experimentos locais no Kind podem ser repetidos e
+comparam uma e múltiplas réplicas com os mesmos parâmetros, incluindo métricas,
+traces e efeitos das falhas controladas sobre dados e outbox.
 
-## Etapa 10 — Segurança e fechamento da versão
+**Fora do escopo:** AKS e qualquer teste ou validação no Azure.
 
-**Objetivo:** consolidar a primeira entrega demonstrável.
+**Estado:** planejada para a `v1.0.0`.
 
-- revisar limites, permissões, logs e tratamento de erros;
-- executar análise de dependências e imagem;
-- verificar requisitos e cenários CT-001 a CT-010;
-- atualizar diagramas, contratos e instruções de operação;
-- registrar limitações e backlog da próxima versão;
-- criar release candidata.
+## Etapa 10 — Fechamento e tag da `v1.0.0`
 
-**Saída verificável:** checklist de requisitos atendido, testes verdes e documentação suficiente para demonstração e avaliação acadêmica.
+**Objetivo:** consolidar uma release local, segura, operacional e reproduzível.
+
+- revisar todos os requisitos e cenários de aceite;
+- executar todos os testes;
+- revisar segurança, privacidade, limites, permissões, logs e tratamento de
+  erros;
+- revisar requests/limits e o consumo observado dos recursos;
+- verificar imagens e dependências;
+- confirmar a ausência de segredos reais no repositório e nas imagens;
+- consolidar as evidências reproduzíveis do TCC;
+- atualizar diagramas, contratos, procedimentos operacionais e de reprodução;
+- documentar limitações do laboratório, do Kind e do Azurite;
+- registrar o backlog da `v1.1.0` sem apresentá-lo como implementado;
+- criar uma release candidate e preparar a tag `v1.0.0`.
+
+**Saída verificável:** checklist de requisitos atendido, testes verdes,
+documentação operacional e evidências consolidadas; o laboratório pode ser
+reproduzido do zero sem conta Azure; a release candidate está pronta para a
+tag `v1.0.0`.
+
+**Estado:** planejada para a `v1.0.0`.
+
+## Roadmap da `v1.1.0` — Azure
+
+A `v1.1.0` fica reservada para implantação e integração com:
+
+- Azure Kubernetes Service;
+- Azure Container Registry;
+- Azure Database for PostgreSQL Flexible Server;
+- Azure Blob Storage real;
+- Azure Key Vault;
+- Managed Identity e RBAC;
+- rede e endpoints privados;
+- ingress, domínio e TLS no Azure;
+- Azure Monitor ou Application Insights, se aprovados;
+- infraestrutura como código;
+- análise FinOps e custos Azure;
+- políticas de backup, disponibilidade e recuperação;
+- validação da aplicação no ambiente Azure.
+
+A possível troca do RabbitMQ por Azure Service Bus será avaliada futuramente;
+ela não está confirmada. Esse roadmap não integra a definição de pronto da
+`v1.0.0`.
 
 ## Regras para avançar
 

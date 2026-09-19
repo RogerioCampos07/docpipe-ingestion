@@ -4,6 +4,39 @@ Microserviço de entrada do DocPipe. Recebe PDF, PNG ou JPEG, valida e grava o
 original por streaming, persiste metadados e uma outbox transacional e publica
 `document.received.v1` no RabbitMQ. Não executa OCR, classificação ou extração.
 
+## Versões e estado do desenvolvimento
+
+A versão em desenvolvimento é a `v1.0.0`. As Etapas 1 a 7 estão concluídas e
+integradas à branch principal; as Etapas 8 a 10 permanecem planejadas. A
+entrega `v1.0.0` será um laboratório completamente executável e reproduzível
+em ambiente local, sem conta, assinatura ou recursos de cloud provider. Esse
+laboratório não deve ser apresentado como ambiente de produção.
+
+O escopo consolidado da `v1.0.0` inclui API FastAPI, SQLite e storage local no
+modo simples; PostgreSQL, Azurite e RabbitMQ no laboratório compartilhado;
+transactional outbox; API e worker separados; logs estruturados, métricas
+Prometheus, traces OpenTelemetry, liveness, readiness e stack local de
+observabilidade. Também estão planejados containers Docker, Kubernetes local
+com Kind, testes locais de carga e resiliência, evidências reproduzíveis para
+o TCC, revisão de segurança, documentação operacional e a release `v1.0.0`.
+
+O Kind será o ambiente Kubernetes oficial da `v1.0.0`, em configuração local
+single-node adequada ao notebook de 8 GB de RAM. Ele permitirá validar
+manifests, processos separados, persistência, probes e múltiplas réplicas da
+API sem registry externo obrigatório. Kind não reproduz todas as
+características operacionais de um serviço gerenciado como AKS.
+
+### Roadmap da `v1.1.0`
+
+A `v1.1.0` fica reservada para implantação e integração Azure: AKS, Azure
+Container Registry, Azure Database for PostgreSQL Flexible Server, Azure Blob
+Storage real, Azure Key Vault, Managed Identity, RBAC, rede e endpoints
+privados, ingress, domínio e TLS no Azure, infraestrutura como código, análise
+FinOps, políticas de backup, disponibilidade e recuperação e validação da
+aplicação nesse ambiente. Azure Monitor ou Application Insights dependerão de
+aprovação. A possível troca de RabbitMQ por Azure Service Bus será avaliada
+futuramente e não é uma decisão confirmada.
+
 ## Modos locais
 
 O modo simples é o padrão: SQLite em `dataset/docpipe-ingestion.db` e arquivos
@@ -14,6 +47,10 @@ O laboratório compartilhado usa PostgreSQL, Azurite Blob e RabbitMQ. O Azurite
 é um emulador local da API do Azure Blob Storage e não requer conta, assinatura
 ou recurso Azure. Ele não valida Managed Identity, RBAC, rede privada,
 disponibilidade ou todas as características do Azure real.
+
+Compatibilidade de API não significa equivalência completa: a `v1.0.0` não é
+implantada nem validada no Azure Blob Storage real ou em qualquer outro
+serviço Azure.
 
 | Banco | Storage | Uso |
 | --- | --- | --- |

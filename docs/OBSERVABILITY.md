@@ -1,5 +1,11 @@
 # Observabilidade do DocPipe Ingestion
 
+Esta documentação descreve a observabilidade já implementada na Etapa 7. Na
+`v1.0.0`, toda a telemetria permanece local e a stack pode ser ativada sob
+demanda também dentro do laboratório Kind. Integração com serviços Azure fica
+no backlog da `v1.1.0`; Azure Monitor e Application Insights não fazem parte
+da versão atual e só poderão ser adotados após aprovação.
+
 ## Sinais e privacidade
 
 Os logs são JSON e compartilham `correlation_id` com metadados e evento. Quando
@@ -98,3 +104,8 @@ Readiness é uma avaliação pontual e não garante quota, espaço ou sucesso da
 gravação seguinte. O worker informa vida do servidor de monitoramento; falhas
 do broker continuam visíveis nos logs e métricas e não invalidam a readiness
 da API.
+
+Na Etapa 8, esta mesma stack será disponibilizada no Kind somente quando
+necessária, respeitando os recursos conservadores do laboratório. A forma de
+execução no Kind não transforma o ambiente local em produção nem demonstra
+equivalência com observabilidade gerenciada no Azure.

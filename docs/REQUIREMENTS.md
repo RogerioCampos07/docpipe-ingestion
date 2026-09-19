@@ -104,12 +104,12 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 
 ### RNF-002 — Escalabilidade
 
-- A primeira versão deve operar corretamente em uma única instância.
+- O modo simples da `v1.0.0` deve operar corretamente em uma única instância.
 - O domínio não deve depender diretamente de SQLite nem do sistema de arquivos.
-- A evolução para múltiplas réplicas exige PostgreSQL e armazenamento de objetos
-  compartilhado ou soluções equivalentes.
-- Na Etapa 6, o armazenamento compartilhado deve ser validado localmente com
-  Azurite, sem exigir conta ou recursos Azure.
+- O laboratório Kind da `v1.0.0` deve executar a API com uma e com múltiplas
+  réplicas usando PostgreSQL e Azurite compartilhados.
+- A escalabilidade deve ser declarativa, com teste comparável de uma e de
+  múltiplas réplicas, sem pressupor ganho antes do baseline.
 
 ### RNF-003 — Confiabilidade
 
@@ -141,10 +141,33 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 - A configuração deve permitir trocar banco e storage sem alterar regras de
   negócio.
 - O adaptador de objetos deve operar contra o Azurite no ambiente local e
-  preservar compatibilidade com a API do Azure Blob Storage para uma possível
-  implantação futura.
+  preservar compatibilidade com a API do Azure Blob Storage para a evolução
+  planejada na `v1.1.0`.
+- A `v1.0.0` deve ser totalmente executável e reproduzível sem conta,
+  assinatura ou recursos de cloud provider.
 - A aplicação deve ser empacotada em container; `dataset/` deve usar volume
-  persistente quando a primeira versão for executada em container.
+  persistente quando o modo simples for executado em container.
+- As integrações externas devem permanecer atrás de adaptadores, sem acoplar o
+  domínio a SQLite, PostgreSQL, filesystem, Azurite, Azure ou RabbitMQ.
+
+### RNF-008 — Implantação local no Kind
+
+- Kind single-node é o alvo Kubernetes oficial da `v1.0.0`, com node image de
+  versão fixada durante a implementação e configuração adequada ao notebook de
+  8 GB de RAM.
+- A imagem do Ingestion deve ser construída localmente e carregada com
+  `kind load docker-image`, sem registry externo obrigatório.
+- API e worker devem usar Deployments separados, Services internos,
+  ConfigMaps, referências a Secrets locais sem valores reais versionados,
+  probes e requests/limits conservadores.
+- PostgreSQL, RabbitMQ e Azurite devem estar disponíveis no laboratório;
+  PersistentVolumeClaims devem ser usados quando necessários.
+- Migrations devem ser executadas de forma controlada por Job.
+- O acesso deve funcionar por `kubectl port-forward` ou mecanismo local
+  equivalente, e a stack de observabilidade deve ser ativada somente quando
+  necessária.
+- Devem existir comandos reproduzíveis para criar, validar e remover o cluster.
+- Kind não deve ser tratado como equivalente ao AKS nem como produção.
 
 ### RNF-007 — Manutenibilidade
 
@@ -156,14 +179,20 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 ## 3. Restrições
 
 - Cada microserviço do DocPipe possui banco próprio; o Ingestion não compartilha tabelas.
-- A primeira versão usa SQLite e armazenamento em `dataset/documents/`.
-- A primeira versão é limitada a uma única réplica com escrita.
+- A `v1.0.0` oferece SQLite e `dataset/documents/` no modo simples, limitado a
+  uma réplica com escrita.
+- O laboratório compartilhado da `v1.0.0` usa PostgreSQL, Azurite e RabbitMQ
+  locais e admite múltiplas réplicas da API.
 - A Etapa 6 usa PostgreSQL e Azurite no laboratório local; ela não exige nem
   cria recursos Azure.
-- Azure Blob Storage real e Azure Service Bus permanecem fora do escopo dessa
-  etapa.
+- A `v1.0.0` não inclui AKS, Azure Container Registry, Azure Database for
+  PostgreSQL Flexible Server, Azure Blob Storage real, Azure Key Vault,
+  Managed Identity, RBAC, rede privada, endpoints privados, ingress, domínio,
+  TLS público, Azure Monitor, Application Insights ou infraestrutura cloud.
+- A possível troca de RabbitMQ por Azure Service Bus permanece uma decisão
+  futura, não confirmada.
 - O serviço não executa OCR, classificação ou extração.
-- A primeira versão recebe apenas um arquivo por requisição.
+- A `v1.0.0` recebe apenas um arquivo por requisição.
 - Não há armazenamento público de documentos.
 - Não há dados reais sensíveis nos testes acadêmicos.
 
@@ -182,12 +211,35 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 | CT-008 | Reinício do publicador | evento pendente é retomado |
 | CT-009 | Documento inexistente | `404` |
 | CT-010 | Carga concorrente | métricas e relatório reproduzível sem perda de registros |
+| CT-011 | Kind com uma e múltiplas réplicas da API | implantação saudável e comparação reproduzível |
+| CT-012 | Reinício da API e do worker | recuperação sem perda de dados aceitos |
+| CT-013 | PostgreSQL ou Azurite temporariamente indisponível | falha observável e recuperação/persistência verificadas |
 
-## 5. Definição de pronto da primeira versão
+## 5. Definição de pronto da `v1.0.0`
 
-A primeira versão estará pronta quando todos os RFs tiverem testes automatizados
-relevantes, as migrations SQLite forem reproduzíveis, o fluxo funcionar no
-ambiente local, os documentos forem persistidos com segurança em
-`dataset/documents/`, a imagem de container passar nas verificações, a
-telemetria for coletável e um teste de carga de instância única puder ser
-repetido.
+A `v1.0.0` estará pronta quando todos os RFs tiverem testes automatizados
+relevantes; migrations SQLite e PostgreSQL forem reproduzíveis; os modos
+simples e compartilhado funcionarem localmente; imagens e dependências forem
+verificadas; e não houver segredos reais versionados. O laboratório Kind deve
+poder ser criado, validado e removido sem conta Azure, executar API e worker
+separadamente, coletar telemetria e demonstrar uma e múltiplas réplicas da API.
+
+Os testes Locust devem usar dataset sintético e registrar parâmetros,
+throughput, p50, p95, p99, taxa de erro, CPU, memória, comportamento da outbox,
+persistência, métricas e traces. Devem cobrir indisponibilidade e recuperação
+do RabbitMQ, reinícios da API e do worker e indisponibilidade temporária do
+PostgreSQL ou Azurite. Nenhuma meta ou threshold será definido antes do
+baseline. A revisão final deve cobrir segurança, privacidade, limites de
+recursos, documentação operacional, evidências do TCC, limitações, release
+candidate e preparação da tag `v1.0.0`.
+
+## 6. Backlog da `v1.1.0`
+
+A `v1.1.0`, sem caráter de requisito para a `v1.0.0`, fica reservada para AKS,
+Azure Container Registry, Azure Database for PostgreSQL Flexible Server, Azure
+Blob Storage real, Azure Key Vault, Managed Identity, RBAC, rede e endpoints
+privados, ingress, domínio e TLS no Azure, infraestrutura como código, análise
+FinOps, políticas de backup, disponibilidade e recuperação e validação da
+aplicação no ambiente Azure. Azure Monitor ou Application Insights dependem de
+aprovação. Azure Service Bus permanece apenas como possível substituto futuro
+do RabbitMQ a ser avaliado.
