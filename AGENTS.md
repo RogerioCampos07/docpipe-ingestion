@@ -94,10 +94,11 @@ partida e pode deixar de refletir arquivos já evoluídos.
 - Cada mudança deve ser pequena, verificável e deixar o repositório em estado
   executável quando isso for aplicável à etapa.
 - Não antecipe recursos de etapas posteriores. As Etapas 1 a 7 estão
-  concluídas; durante as Etapas 8 a 10, implemente somente o laboratório local
-  necessário à `v1.0.0`.
-- O alvo Kubernetes da Etapa 8 é um cluster Kind local. Não introduza AKS,
-  Azure Container Registry nem qualquer recurso Azure nas Etapas 8 a 10.
+  concluídas; a Etapa 7 cobre somente a instrumentação do serviço. As Etapas 8
+  a 10 tratam, respectivamente, de CI, experimentos locais e consolidação da
+  `v1.0.0`.
+- Kind e Kubernetes não fazem parte da `v1.0.0`. Não introduza AKS, Azure
+  Container Registry nem qualquer recurso Azure nas Etapas 8 a 10.
 - Integrações e implantação em serviços Azure pertencem ao backlog da
   `v1.1.0`; Azure Service Bus permanece uma decisão futura, não confirmada.
 - Antes de modificar contratos HTTP, eventos, migrations ou configuração,
@@ -192,6 +193,11 @@ Quando a instrumentação correspondente fizer parte da etapa solicitada:
 - meça latência, volume, tamanho, erros e tempo gasto nas dependências;
 - não inclua conteúdo do documento em logs, métricas ou traces;
 - mantenha labels de métricas com cardinalidade controlada.
+- mantenha a instrumentação desacoplada do backend de coleta, armazenamento,
+  consulta ou visualização;
+- não atribua a este repositório a stack central de observabilidade. Sua
+  avaliação pertence a um futuro repositório integrador ou de plataforma,
+  ainda não implementado nem formalmente aprovado.
 
 ## Testes
 
@@ -234,8 +240,8 @@ tipos quando ela estiver configurada no projeto.
   criação de recursos Azure externos.
 - A `v1.0.0` deve ser completamente executável e reproduzível localmente, sem
   conta, assinatura ou recursos de cloud provider.
-- O Kubernetes oficial da `v1.0.0` é Kind single-node, dimensionado para o
-  notebook de 8 GB de RAM; Kind não deve ser descrito como equivalente ao AKS.
+- Docker Compose é o ambiente principal dos experimentos da `v1.0.0`; Kind e
+  Kubernetes não são requisitos desta versão.
 - O Azurite usa APIs compatíveis com Azure Blob Storage, mas não comprova
   implantação nem validação no Azure.
 - Não crie ou altere infraestrutura externa, recursos Azure ou clusters sem
