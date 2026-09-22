@@ -17,6 +17,8 @@ O DocPipe processa documentos corporativos por meio de microserviços independen
   Azure;
 - entregar a `v1.0.0` como laboratório local reproduzível e independente de
   qualquer cloud provider;
+- manter a instrumentação independente do backend de observabilidade;
+- permitir que cada microsserviço evolua em seu próprio repositório;
 - preservar adaptadores e contratos que permitam evoluir para serviços Azure
   na `v1.1.0` sem acoplar o domínio.
 
@@ -28,6 +30,9 @@ O DocPipe processa documentos corporativos por meio de microserviços independen
 - gestão de usuários e autenticação;
 - relatórios e notificações;
 - interface web.
+- stack central de coleta, armazenamento e visualização de telemetria;
+- composição operacional de todos os microsserviços;
+- Kubernetes na `v1.0.0`.
 
 ## 4. Visão de componentes
 
@@ -202,12 +207,18 @@ Span da requisição e spans filhos para armazenamento, transação no banco e p
   configurável;
 - a readiness da API consulta banco e storage. RabbitMQ e exporters não são
   dependências de aceitação devido à outbox transacional;
-- Prometheus, Grafana e Tempo formam a stack local opcional. Não são requisito
-  para o modo SQLite e storage local;
+- métricas e traces podem ser exportados a endpoints configuráveis, sem tornar
+  um backend específico dependência do serviço;
 - identificadores individuais aparecem somente em logs e traces quando
   necessários ao diagnóstico, nunca como labels Prometheus.
 
-## 14. Implantação da `v1.0.0`
+OpenTelemetry Collector, Prometheus, Grafana, Jaeger, Tempo, Loki, dashboards,
+alertas e armazenamento central não pertencem à arquitetura permanente deste
+repositório. O Compose, as configurações e o dashboard ainda presentes de
+Prometheus, Grafana e Tempo são remanescentes da implementação original da
+Etapa 7 e serão removidos em uma alteração separada de código e infraestrutura.
+
+## 14. Execução local da `v1.0.0`
 
 - Imagem Docker executada por usuário não root.
 - Configuração via variáveis de ambiente, validada na inicialização.
@@ -216,21 +227,18 @@ Span da requisição e spans filhos para armazenamento, transação no banco e p
   `dataset/` quando estiver em container.
 - O laboratório compartilhado usa PostgreSQL, Azurite e RabbitMQ locais para
   permitir múltiplas réplicas da API.
-- Kind single-node é o alvo Kubernetes da `v1.0.0`, adequado ao notebook de
-  8 GB de RAM. API e worker executam em Deployments separados.
-- A imagem é construída localmente e carregada por
-  `kind load docker-image`; nenhum registry externo é obrigatório.
-- Services internos, ConfigMaps, referências a Secrets locais sem valores
-  reais versionados, PersistentVolumeClaims quando necessários, probes e
-  requests/limits conservadores compõem o laboratório.
-- Migrações são executadas de forma controlada por Job. O acesso local usa
-  `kubectl port-forward` ou mecanismo local equivalente.
+- Docker Compose é o ambiente principal do laboratório compartilhado.
+- API e worker executam como processos separados.
+- A imagem é construída e validada localmente e pelo CI, sem publicação
+  automática.
 - Readiness considera dependências necessárias para aceitar documentos com segurança; liveness verifica apenas o processo.
-- Migrações são executadas como tarefa controlada de implantação, não simultaneamente por todas as réplicas.
+- Migrações são executadas de forma controlada, não simultaneamente por todas
+  as instâncias.
+- Os experimentos registram CPU, memória, swap e limitações do notebook e
+  preservam volumes e dados durante a interrupção segura.
 
-O Kind valida os artefatos e o comportamento Kubernetes usados no laboratório,
-mas não reproduz características gerenciadas, disponibilidade, rede ou escala
-do AKS. A `v1.0.0` não é implantação de produção.
+Kind e Kubernetes não fazem parte da `v1.0.0`. A versão é um laboratório local
+reproduzível, não uma implantação de produção.
 
 ## 15. Evolução implementada na Etapa 6
 
@@ -263,7 +271,8 @@ uma eventual adoção do Azure Service Bus exige decisão e etapa próprias.
 | PostgreSQL, Azurite e RabbitMQ locais | Fornecem infraestrutura compartilhada para o laboratório da `v1.0.0` |
 | Broker atrás de adaptador | Preserva portabilidade; RabbitMQ continua confirmado na `v1.0.0` |
 | Azurite na Etapa 6 | Valida localmente o adaptador de objetos compatível com Azure Blob sem exigir conta Azure |
-| Kind na Etapa 8 | Permite validar Kubernetes localmente sem registry ou cloud obrigatórios |
+| GitHub Actions na Etapa 8 | Valida mudanças continuamente sem implicar deploy contínuo |
+| Docker Compose na Etapa 9 | Sustenta experimentos locais sem cluster obrigatório |
 | Azure na `v1.1.0` | Separa a validação local da implantação e integração com serviços gerenciados |
 | Azure Service Bus não decidido | Mantém sua possível adoção como avaliação futura |
 | Contratos versionados | Facilita evolução independente de produtores e consumidores |
@@ -305,7 +314,21 @@ Application Insights dependem de aprovação. A possível substituição do
 RabbitMQ por Azure Service Bus continua em avaliação e não é uma decisão
 arquitetural confirmada.
 
-Os adaptadores existentes preservam portabilidade, mas nem Azurite equivale ao
-Azure Blob Storage real, nem Kind equivale ao AKS. Autenticação, autorização,
-rede, disponibilidade, desempenho e operação dos serviços gerenciados somente
-podem ser validados na `v1.1.0`.
+Os adaptadores existentes preservam portabilidade, mas o Azurite não equivale
+ao Azure Blob Storage real. Autenticação, autorização, rede, disponibilidade,
+desempenho e operação dos serviços gerenciados somente podem ser validados na
+`v1.1.0`.
+
+## 19. Repositórios dos microsserviços
+
+Cada microsserviço do DocPipe será mantido em repositório separado, com código,
+testes, CI, imagem, health checks e instrumentação próprios. Logs estruturados,
+correlation ID, métricas, traces e configuração de exportação permanecem sob a
+responsabilidade de cada serviço.
+
+Um futuro repositório integrador ou de plataforma poderá compor os serviços,
+operar infraestrutura compartilhada, hospedar a stack central de
+observabilidade e executar testes ponta a ponta ou integrados. Também poderá
+avaliar uma topologia Kubernetes, inclusive Kind para integração local. Esse
+repositório ainda não foi criado ou formalmente aprovado, e sua arquitetura não
+está definida.

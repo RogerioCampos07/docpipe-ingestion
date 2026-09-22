@@ -90,7 +90,8 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 
 - liveness não falha somente porque uma dependência externa está indisponível;
 - readiness falha quando não é seguro aceitar novos documentos;
-- métricas podem ser coletadas pelo Prometheus;
+- métricas são expostas em formato compatível com coleta e sem dependência de
+  backend específico;
 - nenhum endpoint expõe segredo ou conteúdo de documento.
 
 ## 2. Requisitos não funcionais
@@ -106,10 +107,9 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 
 - O modo simples da `v1.0.0` deve operar corretamente em uma única instância.
 - O domínio não deve depender diretamente de SQLite nem do sistema de arquivos.
-- O laboratório Kind da `v1.0.0` deve executar a API com uma e com múltiplas
-  réplicas usando PostgreSQL e Azurite compartilhados.
-- A escalabilidade deve ser declarativa, com teste comparável de uma e de
-  múltiplas réplicas, sem pressupor ganho antes do baseline.
+- O laboratório local da `v1.0.0` usa Docker Compose como ambiente principal.
+- A comparação entre uma e múltiplas instâncias deve ocorrer somente quando
+  tecnicamente aplicável, sem pressupor ganho antes do baseline.
 
 ### RNF-003 — Confiabilidade
 
@@ -133,6 +133,8 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 - Logs, métricas e traces devem permitir seguir uma ingestão sem registrar o conteúdo.
 - Métricas devem evitar labels de alta cardinalidade.
 - Falhas em banco, storage e broker devem ser distinguíveis.
+- A instrumentação deve exportar telemetria para endpoints configuráveis e
+  permanecer desacoplada de coleta, armazenamento e visualização centrais.
 
 ### RNF-006 — Portabilidade
 
@@ -150,31 +152,26 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 - As integrações externas devem permanecer atrás de adaptadores, sem acoplar o
   domínio a SQLite, PostgreSQL, filesystem, Azurite, Azure ou RabbitMQ.
 
-### RNF-008 — Implantação local no Kind
-
-- Kind single-node é o alvo Kubernetes oficial da `v1.0.0`, com node image de
-  versão fixada durante a implementação e configuração adequada ao notebook de
-  8 GB de RAM.
-- A imagem do Ingestion deve ser construída localmente e carregada com
-  `kind load docker-image`, sem registry externo obrigatório.
-- API e worker devem usar Deployments separados, Services internos,
-  ConfigMaps, referências a Secrets locais sem valores reais versionados,
-  probes e requests/limits conservadores.
-- PostgreSQL, RabbitMQ e Azurite devem estar disponíveis no laboratório;
-  PersistentVolumeClaims devem ser usados quando necessários.
-- Migrations devem ser executadas de forma controlada por Job.
-- O acesso deve funcionar por `kubectl port-forward` ou mecanismo local
-  equivalente, e a stack de observabilidade deve ser ativada somente quando
-  necessária.
-- Devem existir comandos reproduzíveis para criar, validar e remover o cluster.
-- Kind não deve ser tratado como equivalente ao AKS nem como produção.
-
 ### RNF-007 — Manutenibilidade
 
 - Código tipado, formatado e coberto por testes automatizados.
 - Contratos HTTP e de evento devem ser versionados.
-- Toda alteração de banco deve possuir migration reversível quando tecnicamente segura.
+- Toda alteração de banco deve possuir migration reversível quando
+  tecnicamente segura.
 - Dependências devem ser mínimas e justificadas.
+
+### RNF-008 — Integração contínua
+
+- GitHub Actions deve validar pull requests e pushes para `main`.
+- A instalação deve usar `uv` e o lockfile; Ruff, typos, pytest e a construção
+  da imagem devem ser checks reproduzíveis.
+- PostgreSQL, RabbitMQ e Azurite devem ser iniciados somente nos testes que
+  realmente dependam deles.
+- Workflows devem usar permissões mínimas, cache baseado no lockfile,
+  cancelamento de execuções obsoletas e timeouts.
+- A proteção da `main` poderá exigir checks documentados após sua definição.
+- CI não implica CD. A `v1.0.0` não inclui deploy contínuo nem publicação
+  automática de imagens.
 
 ## 3. Restrições
 
@@ -189,6 +186,9 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
   PostgreSQL Flexible Server, Azure Blob Storage real, Azure Key Vault,
   Managed Identity, RBAC, rede privada, endpoints privados, ingress, domínio,
   TLS público, Azure Monitor, Application Insights ou infraestrutura cloud.
+- A `v1.0.0` não inclui Kind, Kubernetes nem cluster obrigatório.
+- OpenTelemetry Collector, Prometheus, Grafana, Jaeger, Tempo e Loki não são
+  responsabilidades permanentes deste repositório.
 - A possível troca de RabbitMQ por Azure Service Bus permanece uma decisão
   futura, não confirmada.
 - O serviço não executa OCR, classificação ou extração.
@@ -211,7 +211,7 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 | CT-008 | Reinício do publicador | evento pendente é retomado |
 | CT-009 | Documento inexistente | `404` |
 | CT-010 | Carga concorrente | métricas e relatório reproduzível sem perda de registros |
-| CT-011 | Kind com uma e múltiplas réplicas da API | implantação saudável e comparação reproduzível |
+| CT-011 | Uma e múltiplas instâncias quando aplicável | comparação controlada sem ganho presumido |
 | CT-012 | Reinício da API e do worker | recuperação sem perda de dados aceitos |
 | CT-013 | PostgreSQL ou Azurite temporariamente indisponível | falha observável e recuperação/persistência verificadas |
 
@@ -219,18 +219,18 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 
 A `v1.0.0` estará pronta quando todos os RFs tiverem testes automatizados
 relevantes; migrations SQLite e PostgreSQL forem reproduzíveis; os modos
-simples e compartilhado funcionarem localmente; imagens e dependências forem
-verificadas; e não houver segredos reais versionados. O laboratório Kind deve
-poder ser criado, validado e removido sem conta Azure, executar API e worker
-separadamente, coletar telemetria e demonstrar uma e múltiplas réplicas da API.
+simples e compartilhado funcionarem localmente com Docker Compose; imagens e
+dependências forem verificadas; os checks de CI estiverem revisados; e não
+houver segredos reais versionados. API e worker devem executar separadamente e
+emitir a telemetria necessária aos experimentos.
 
 Os testes Locust devem usar dataset sintético e registrar parâmetros,
 throughput, p50, p95, p99, taxa de erro, CPU, memória, comportamento da outbox,
-persistência, métricas e traces. Devem cobrir indisponibilidade e recuperação
-do RabbitMQ, reinícios da API e do worker e indisponibilidade temporária do
-PostgreSQL ou Azurite. Nenhuma meta ou threshold será definido antes do
-baseline. A revisão final deve cobrir segurança, privacidade, limites de
-recursos, documentação operacional, evidências do TCC, limitações, release
+swap, persistência, métricas e traces. Devem cobrir indisponibilidade e
+recuperação do RabbitMQ, reinícios da API e do worker e indisponibilidade
+temporária do PostgreSQL ou Azurite. Nenhuma meta ou threshold será definido
+antes do baseline. A revisão final deve cobrir segurança, privacidade, limites
+de recursos, documentação operacional, evidências do TCC, limitações, release
 candidate e preparação da tag `v1.0.0`.
 
 ## 6. Backlog da `v1.1.0`
@@ -239,7 +239,19 @@ A `v1.1.0`, sem caráter de requisito para a `v1.0.0`, fica reservada para AKS,
 Azure Container Registry, Azure Database for PostgreSQL Flexible Server, Azure
 Blob Storage real, Azure Key Vault, Managed Identity, RBAC, rede e endpoints
 privados, ingress, domínio e TLS no Azure, infraestrutura como código, análise
-FinOps, políticas de backup, disponibilidade e recuperação e validação da
-aplicação no ambiente Azure. Azure Monitor ou Application Insights dependem de
-aprovação. Azure Service Bus permanece apenas como possível substituto futuro
-do RabbitMQ a ser avaliado.
+FinOps, observabilidade gerenciada, políticas de backup, disponibilidade e
+recuperação e validação da aplicação no ambiente Azure. Azure Service Bus
+permanece apenas como possível substituto futuro do RabbitMQ a ser avaliado.
+
+## 7. Arquitetura futura entre repositórios
+
+Os microsserviços do DocPipe serão mantidos em repositórios separados. Cada
+repositório deverá manter código, testes, CI, imagem, health checks, logs
+estruturados, correlation ID, métricas, instrumentação de traces e configuração
+para exportar telemetria.
+
+Um futuro repositório integrador ou de plataforma poderá concentrar composição,
+ambiente integrado, observabilidade central, dashboards, alertas, testes ponta
+a ponta, experimentos integrados e infraestrutura compartilhada. Uma eventual
+topologia Kubernetes também poderá ser avaliada nesse contexto. Esse
+repositório ainda não está implementado nem formalmente aprovado.

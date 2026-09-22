@@ -1,111 +1,123 @@
-# Observabilidade do DocPipe Ingestion
+# Instrumentação do DocPipe Ingestion
 
-Esta documentação descreve a observabilidade já implementada na Etapa 7. Na
-`v1.0.0`, toda a telemetria permanece local e a stack pode ser ativada sob
-demanda também dentro do laboratório Kind. Integração com serviços Azure fica
-no backlog da `v1.1.0`; Azure Monitor e Application Insights não fazem parte
-da versão atual e só poderão ser adotados após aprovação.
+Este documento descreve os sinais de telemetria emitidos pelo serviço. A
+Etapa 7 foi concluída com a instrumentação da API e do worker, sem atribuir ao
+`docpipe-ingestion` a operação de uma stack central de observabilidade.
+
+## Responsabilidades deste repositório
+
+O serviço mantém:
+
+- logs estruturados;
+- geração e propagação de `correlation_id`;
+- inclusão de `trace_id` e `span_id` quando há span ativo;
+- métricas da aplicação;
+- instrumentação de traces;
+- liveness e readiness;
+- propagação de W3C Trace Context pela outbox e pelo RabbitMQ;
+- configuração da instrumentação por variáveis de ambiente;
+- testes dos sinais e da propagação de contexto;
+- capacidade de exportar traces para um endpoint configurável.
+
+A instrumentação não depende do backend que coleta, armazena, consulta ou
+visualiza os sinais.
 
 ## Sinais e privacidade
 
-Os logs são JSON e compartilham `correlation_id` com metadados e evento. Quando
-há span ativo, também incluem `trace_id` e `span_id`. Logs, métricas e traces
-não contêm conteúdo, nome original, payload completo, checksum, storage key,
-connection string, token ou caminho absoluto.
+Os logs são JSON e compartilham `correlation_id` com metadados e evento. O
+`correlation_id` é o identificador funcional do fluxo; ele não é derivado do
+trace e continua disponível quando tracing está desativado. Quando há span
+ativo, os logs também incluem `trace_id` e `span_id`.
 
-Os logs principais usam as operações `service.start`, `service.stop`,
-`http.request`, `document.ingest` e `outbox.publish`. Falhas usam categorias
-estáveis para distinguir API, validação, banco, storage e RabbitMQ.
+Logs, métricas e traces não contêm conteúdo, nome original, payload completo,
+checksum, chave de storage, connection string, token ou caminho absoluto. Os
+logs principais usam as operações `service.start`, `service.stop`,
+`http.request`, `document.ingest` e `outbox.publish`. Categorias estáveis
+distinguem falhas da API, validação, banco, storage e RabbitMQ.
 
-## Métricas
+## Métricas do serviço
 
 A API expõe `/metrics` em sua porta. O worker expõe `/metrics`,
-`/health/live` e `/health/ready` na porta configurada, `9001` por padrão.
-Os registries são independentes.
+`/health/live` e `/health/ready` na porta configurada, `9001` por padrão. Os
+registries são independentes.
 
 Famílias principais:
 
-- `docpipe_ingestion_http_requests_total` e
-  `docpipe_ingestion_http_request_duration_seconds`;
-- `docpipe_ingestion_uploads_total`,
-  `docpipe_ingestion_documents_accepted_total` e bytes recebidos/armazenados;
+- requisições HTTP e sua duração;
+- uploads, documentos aceitos e bytes recebidos ou armazenados;
 - duração, falhas e transações do banco;
 - duração, bytes e falhas de storage;
 - backlog, idade e eventos esgotados da outbox;
 - tentativas, confirmações, falhas e duração da publicação;
 - ciclos do worker e estado das dependências de readiness.
 
-Rotas usam templates. UUIDs, nomes, mensagens de erro, URLs e chaves nunca são
-labels.
+As rotas usam templates. UUIDs, nomes, mensagens de erro, URLs e chaves nunca
+são labels. As métricas usam formato compatível com coleta pelo Prometheus,
+mas o Prometheus não é uma dependência do serviço.
 
-## Traces
+## Traces e propagação de contexto
 
 FastAPI cria o span servidor. Spans manuais cobrem `document.ingest`,
 `document.get`, `storage.upload`, `database.commit`,
 `outbox.publish_attempt` e `rabbitmq.publish`. O carrier `traceparent` e o
 `tracestate` opcional ficam em coluna privada da outbox e em headers AMQP; o
-payload versionado não muda. Eventos antigos sem carrier iniciam novo trace.
+payload versionado de `document.received.v1` não muda. Eventos antigos sem
+carrier iniciam novo trace.
 
-## Diagnóstico
+Traces ficam desativados no modo simples. Para exportá-los por OTLP HTTP:
+
+```dotenv
+DOCPIPE_INGESTION_TRACES_ENABLED=true
+DOCPIPE_INGESTION_TRACES_EXPORTER=otlp
+DOCPIPE_INGESTION_OTLP_ENDPOINT=http://127.0.0.1:4318
+```
+
+O endpoint é configurável e pode pertencer a qualquer backend compatível
+escolhido pelo operador. Falha de exporter não invalida a readiness da API,
+pois a aceitação segura depende do banco e do storage. RabbitMQ também não
+participa da readiness da API porque a outbox preserva os eventos aceitos.
+
+## Diagnóstico local
 
 1. Copie `X-Correlation-ID` da resposta.
-2. Filtre os streams JSON da API e worker por esse valor.
-3. Use o `trace_id` encontrado para abrir o trace no Explore do Grafana/Tempo.
-4. Compare durações dos spans de storage, banco e RabbitMQ.
+2. Filtre os streams JSON da API e do worker por esse valor.
+3. Se tracing estiver ativo, use o `trace_id` no backend configurado.
+4. Compare as durações dos spans de storage, banco e RabbitMQ.
 5. Execute `uv run python -m docpipe_ingestion.diagnostics UUID` para consultar
    estado, tentativas e categoria segura do último erro.
 
-Consultas PromQL úteis:
+O utilitário é somente leitura e não imprime payload, nome de arquivo,
+checksum ou chave de storage. Readiness é uma avaliação pontual e não garante
+quota, espaço ou sucesso da gravação seguinte.
 
-```promql
-sum by (route) (rate(docpipe_ingestion_http_requests_total[5m]))
-```
+## Stack central de observabilidade
 
-```promql
-histogram_quantile(0.95,
-  sum by (le, route)
-    (rate(docpipe_ingestion_http_request_duration_seconds_bucket[5m])))
-```
+OpenTelemetry Collector, Prometheus, Grafana, Jaeger, Tempo, Loki, dashboards,
+alertas e armazenamento central de métricas, logs e traces não são
+responsabilidades permanentes deste repositório. A composição operacional e a
+configuração central de coleta e visualização dos microsserviços também ficam
+fora de seu escopo.
 
-```promql
-max(docpipe_ingestion_outbox_pending_events)
-```
+O repositório ainda contém o Compose, configurações e dashboard de Prometheus,
+Grafana e Tempo criados na implementação original da Etapa 7. Esses arquivos
+são remanescentes temporários: sua remoção física será feita em uma alteração
+separada de código e infraestrutura. Eles não definem a arquitetura futura do
+`docpipe-ingestion`; este documento registra o estado-alvo enquanto a remoção
+ainda não ocorreu.
 
-```promql
-max(docpipe_ingestion_outbox_oldest_pending_age_seconds)
-```
+## Integração futura entre microsserviços
 
-```promql
-sum by (error_category)
-  (rate(docpipe_ingestion_outbox_publication_failures_total[5m]))
-```
+Os microsserviços do DocPipe serão mantidos em repositórios separados. Cada um
+deverá produzir seus próprios logs estruturados, correlation IDs, métricas e
+traces e permitir a exportação para endpoints configuráveis.
 
-Nenhuma consulta define alerta, SLO ou limite de desempenho. Esses valores
-dependem do baseline da Etapa 9.
+Um futuro repositório integrador ou de plataforma poderá consumir esses
+sinais, compor os microsserviços e concentrar coleta, armazenamento,
+visualização, dashboards, alertas e experimentos integrados. Esse repositório
+ainda não existe como implementação aprovada, e sua arquitetura permanece
+sujeita a avaliação.
 
-## Stack local
-
-O Compose opcional usa profiles e rede do host, adequada ao laboratório Linux:
-
-```bash
-docker compose -f docker-compose.observability.yml \
-  --profile observability up -d --wait
-docker compose -f docker-compose.observability.yml ps
-docker compose -f docker-compose.observability.yml \
-  --profile observability stop
-```
-
-Prometheus e Grafana podem ser iniciados com `--profile metrics`; Tempo com
-`--profile traces`. A stack tem limites somados de 896 MiB e retenção local de
-24 horas. A coleta de logs centralizada não faz parte da stack mínima; logs
-continuam nos streams JSON dos processos.
-
-Readiness é uma avaliação pontual e não garante quota, espaço ou sucesso da
-gravação seguinte. O worker informa vida do servidor de monitoramento; falhas
-do broker continuam visíveis nos logs e métricas e não invalidam a readiness
-da API.
-
-Na Etapa 8, esta mesma stack será disponibilizada no Kind somente quando
-necessária, respeitando os recursos conservadores do laboratório. A forma de
-execução no Kind não transforma o ambiente local em produção nem demonstra
-equivalência com observabilidade gerenciada no Azure.
+Nos experimentos isolados da Etapa 9, devem ser usados somente os sinais e os
+recursos estritamente necessários. Se um backend central for necessário para
+um experimento integrado, ele deverá ser tratado no futuro escopo integrador,
+sem reincorporá-lo à responsabilidade deste serviço.

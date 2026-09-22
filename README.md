@@ -14,17 +14,18 @@ laboratório não deve ser apresentado como ambiente de produção.
 
 O escopo consolidado da `v1.0.0` inclui API FastAPI, SQLite e storage local no
 modo simples; PostgreSQL, Azurite e RabbitMQ no laboratório compartilhado;
-transactional outbox; API e worker separados; logs estruturados, métricas
-Prometheus, traces OpenTelemetry, liveness, readiness e stack local de
-observabilidade. Também estão planejados containers Docker, Kubernetes local
-com Kind, testes locais de carga e resiliência, evidências reproduzíveis para
-o TCC, revisão de segurança, documentação operacional e a release `v1.0.0`.
+transactional outbox; API e worker separados; Docker Compose; logs
+estruturados; correlation ID; métricas e instrumentação de traces; health
+checks; testes automatizados; CI com GitHub Actions; testes locais de carga e
+resiliência; evidências reproduzíveis para o TCC; revisão de segurança;
+documentação operacional e a release `v1.0.0`. Kind, Kubernetes e uma stack
+central de observabilidade não fazem parte do escopo desta versão.
 
-O Kind será o ambiente Kubernetes oficial da `v1.0.0`, em configuração local
-single-node adequada ao notebook de 8 GB de RAM. Ele permitirá validar
-manifests, processos separados, persistência, probes e múltiplas réplicas da
-API sem registry externo obrigatório. Kind não reproduz todas as
-características operacionais de um serviço gerenciado como AKS.
+Os microsserviços do DocPipe serão mantidos em repositórios separados, cada um
+com código, testes, CI, imagem, health checks e instrumentação próprios. Um
+futuro repositório integrador ou de plataforma poderá compor os serviços e a
+observabilidade central, mas essa estrutura ainda não foi implementada nem
+formalmente aprovada.
 
 ### Roadmap da `v1.1.0`
 
@@ -32,9 +33,9 @@ A `v1.1.0` fica reservada para implantação e integração Azure: AKS, Azure
 Container Registry, Azure Database for PostgreSQL Flexible Server, Azure Blob
 Storage real, Azure Key Vault, Managed Identity, RBAC, rede e endpoints
 privados, ingress, domínio e TLS no Azure, infraestrutura como código, análise
-FinOps, políticas de backup, disponibilidade e recuperação e validação da
-aplicação nesse ambiente. Azure Monitor ou Application Insights dependerão de
-aprovação. A possível troca de RabbitMQ por Azure Service Bus será avaliada
+FinOps, observabilidade gerenciada, políticas de backup, disponibilidade e
+recuperação e validação da aplicação nesse ambiente. A possível troca de
+RabbitMQ por Azure Service Bus será avaliada
 futuramente e não é uma decisão confirmada.
 
 ## Modos locais
@@ -127,17 +128,18 @@ docker compose stop postgres rabbitmq azurite
 | `GET` | `/v1/documents/{document_id}` | metadados privados ou `404` |
 | `GET` | `/health/live` | vida do processo |
 | `GET` | `/health/ready` | banco e storage aptos para ingestão |
-| `GET` | `/metrics` | métricas Prometheus da API |
+| `GET` | `/metrics` | métricas da API em formato compatível com Prometheus |
 
 As respostas e eventos nunca incluem binário, caminho físico, URL pública,
 connection string ou credencial. O RabbitMQ e os exporters não participam da
 readiness da API porque a outbox preserva eventos aceitos.
 
-## Observabilidade
+## Instrumentação e telemetria
 
 API e worker emitem logs JSON com `correlation_id`, `trace_id` e `span_id`.
 O worker expõe métricas e saúde em `127.0.0.1:9001` por padrão. Traces ficam
-desativados no modo simples; para exportar ao Tempo local, configure:
+desativados no modo simples; para exportar por OTLP a um endpoint configurado,
+use:
 
 ```dotenv
 DOCPIPE_INGESTION_TRACES_ENABLED=true
@@ -145,16 +147,9 @@ DOCPIPE_INGESTION_TRACES_EXPORTER=otlp
 DOCPIPE_INGESTION_OTLP_ENDPOINT=http://127.0.0.1:4318
 ```
 
-Inicie somente a stack de observabilidade, sem as dependências do laboratório:
-
-```bash
-docker compose -f docker-compose.observability.yml \
-  --profile observability up -d --wait
-```
-
-Prometheus fica em `127.0.0.1:9090`, Grafana em `127.0.0.1:3000` e Tempo
-recebe OTLP HTTP em `127.0.0.1:4318`. O dashboard provisionado é
-`DocPipe Ingestion Overview`. Para diagnóstico por correlação:
+O endpoint pode ser fornecido por uma ferramenta escolhida pelo operador. O
+serviço não depende de um backend específico para coletar, armazenar, consultar
+ou visualizar os sinais. Para diagnóstico por correlação:
 
 ```bash
 uv run python -m docpipe_ingestion.diagnostics CORRELATION_UUID
@@ -163,6 +158,12 @@ uv run python -m docpipe_ingestion.diagnostics CORRELATION_UUID
 O utilitário é somente leitura e não imprime payload, nome de arquivo,
 checksum ou chave de storage. Consulte `docs/OBSERVABILITY.md` para consultas,
 catálogos e limitações.
+
+O Compose e as configurações existentes de Prometheus, Grafana e Tempo são
+remanescentes da implementação original da Etapa 7. Eles serão removidos em
+uma alteração separada de código e infraestrutura e não representam a
+responsabilidade arquitetural futura deste repositório. A documentação atual
+define o estado-alvo enquanto essa remoção física ainda não ocorreu.
 
 ## Testes e qualidade
 
