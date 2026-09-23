@@ -1,6 +1,10 @@
+import atexit
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from threading import Event, Lock, Thread
+from time import monotonic
+from typing import Any, override
 
 from opentelemetry import context, propagate, trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
@@ -20,6 +24,69 @@ from opentelemetry.util.types import AttributeValue
 
 from docpipe_ingestion.infrastructure.settings import Settings
 
+logger = logging.getLogger(__name__)
+
+
+class _BoundedTracerProvider(TracerProvider):
+    """Drain on one daemon thread with a shared, bounded shutdown deadline.
+
+    Start the thread during initialization: Python forbids starting threads
+    from an atexit callback. Never wait for the SDK's unbounded force_flush.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(
+            sampler=_sampler(settings),
+            resource=Resource.create({
+                'service.name': settings.service_name,
+                'deployment.environment.name': settings.environment,
+            }),
+            shutdown_on_exit=False,
+        )
+        self._shutdown_timeout = settings.telemetry_shutdown_timeout_seconds
+        self._shutdown_lock = Lock()
+        self._shutdown_requested = Event()
+        self._shutdown_finished = Event()
+        self._shutdown_deadline: float | None = None
+        Thread(
+            target=self._finish_shutdown,
+            name='docpipe-telemetry-shutdown',
+            daemon=True,
+        ).start()
+        atexit.register(self.shutdown)
+
+    def _finish_shutdown(self) -> None:
+        self._shutdown_requested.wait()
+        try:
+            # SDK shutdown already drains the batch processor's queue.
+            super().shutdown()
+        except Exception as error:
+            logger.warning(
+                'telemetry shutdown failed',
+                extra={
+                    'operation': 'telemetry.shutdown',
+                    'error_category': type(error).__name__,
+                },
+            )
+        finally:
+            self._shutdown_finished.set()
+
+    @override
+    def shutdown(self) -> None:
+        with self._shutdown_lock:
+            first_call = self._shutdown_deadline is None
+            if first_call:
+                self._shutdown_deadline = monotonic() + self._shutdown_timeout
+                atexit.unregister(self.shutdown)
+                self._shutdown_requested.set()
+            assert self._shutdown_deadline is not None
+            remaining = max(0.0, self._shutdown_deadline - monotonic())
+        if not self._shutdown_finished.wait(remaining) and first_call:
+            logger.warning(
+                'telemetry shutdown deadline exceeded; spans may be lost',
+                extra={'operation': 'telemetry.shutdown', 'status': 'timeout'},
+            )
+
 
 def _sampler(settings: Settings) -> Any:
     if settings.traces_sampler == 'always_on':
@@ -34,13 +101,7 @@ def create_tracer_provider(
     *,
     exporter: SpanExporter | None = None,
 ) -> TracerProvider:
-    provider = TracerProvider(
-        sampler=_sampler(settings),
-        resource=Resource.create({
-            'service.name': settings.service_name,
-            'deployment.environment.name': settings.environment,
-        }),
-    )
+    provider = _BoundedTracerProvider(settings)
     selected = exporter
     if selected is None and settings.traces_enabled:
         selected = OTLPSpanExporter(
@@ -50,15 +111,6 @@ def create_tracer_provider(
     if selected is not None:
         provider.add_span_processor(BatchSpanProcessor(selected))
     return provider
-
-
-def shutdown_tracer_provider(
-    provider: TracerProvider,
-    timeout_seconds: float,
-) -> None:
-    """Flush completed spans within a bound, then close processors."""
-    provider.force_flush(timeout_millis=int(timeout_seconds * 1000))
-    provider.shutdown()
 
 
 def tracer(provider: TracerProvider | None = None) -> trace.Tracer:

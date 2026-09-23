@@ -43,10 +43,12 @@ def test_local_storage_contract(tmp_path: Path) -> None:
 def test_azurite_storage_contract() -> None:
     azurite_connection_string = os.environ.get(
         'DOCPIPE_INGESTION_TEST_AZURITE_CONNECTION_STRING',
-        'DefaultEndpointsProtocol=http;AccountName=docpipe;'
-        'AccountKey=ZG9jcGlwZS1sb2NhbC1vbmx5LW5vdC1zZWNyZXQ=;'
-        'BlobEndpoint=http://127.0.0.1:10000/docpipe;',
     )
+    if not azurite_connection_string:
+        pytest.fail(
+            'set DOCPIPE_INGESTION_TEST_AZURITE_CONNECTION_STRING '
+            'to an isolated disposable test service'
+        )
     container = f'contract-{uuid4().hex}'
     storage = AzureBlobDocumentStorage(
         AzureBlobStorageConfig(

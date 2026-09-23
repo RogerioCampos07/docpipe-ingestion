@@ -27,7 +27,6 @@ from docpipe_ingestion.infrastructure.observability.metrics import (
 )
 from docpipe_ingestion.infrastructure.observability.tracing import (
     create_tracer_provider,
-    shutdown_tracer_provider,
 )
 from docpipe_ingestion.infrastructure.settings import Settings, get_settings
 
@@ -68,10 +67,7 @@ def create_app(
             yield
         finally:
             service_provider.close()
-            shutdown_tracer_provider(
-                tracer_provider,
-                current_settings.telemetry_shutdown_timeout_seconds,
-            )
+            tracer_provider.shutdown()
 
     application = FastAPI(
         title=current_settings.service_name,

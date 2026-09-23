@@ -61,3 +61,10 @@ def test_readiness_is_independent_from_rabbitmq(
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {'status': 'ok'}
+
+
+def test_disabling_metrics_preserves_liveness() -> None:
+    application = create_app(Settings(metrics_enabled=False))
+    with TestClient(application) as client:
+        assert client.get('/metrics').status_code == status.HTTP_404_NOT_FOUND
+        assert client.get('/health/live').status_code == status.HTTP_200_OK

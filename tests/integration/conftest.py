@@ -17,18 +17,21 @@ def migrate(database_url: str) -> None:
 
 @pytest.fixture
 def postgresql_url() -> str:
-    return os.environ.get(
-        'DOCPIPE_INGESTION_TEST_POSTGRESQL_URL',
-        'postgresql+psycopg://docpipe:docpipe-local@127.0.0.1:5432/'
-        'docpipe_ingestion',
-    )
+    return _explicit_target('DOCPIPE_INGESTION_TEST_POSTGRESQL_URL')
 
 
 @pytest.fixture
 def azurite_connection_string() -> str:
-    return os.environ.get(
-        'DOCPIPE_INGESTION_TEST_AZURITE_CONNECTION_STRING',
-        'DefaultEndpointsProtocol=http;AccountName=docpipe;'
-        'AccountKey=ZG9jcGlwZS1sb2NhbC1vbmx5LW5vdC1zZWNyZXQ=;'
-        'BlobEndpoint=http://127.0.0.1:10000/docpipe;',
-    )
+    return _explicit_target('DOCPIPE_INGESTION_TEST_AZURITE_CONNECTION_STRING')
+
+
+@pytest.fixture
+def rabbitmq_url() -> str:
+    return _explicit_target('DOCPIPE_INGESTION_RABBITMQ_URL')
+
+
+def _explicit_target(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        pytest.fail(f'set {name} to an isolated disposable test service')
+    return value

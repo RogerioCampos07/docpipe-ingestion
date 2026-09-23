@@ -16,11 +16,9 @@ from docpipe_ingestion.infrastructure.messaging.rabbitmq import (
     os.environ.get('DOCPIPE_RABBITMQ_INTEGRATION') != '1',
     reason='set DOCPIPE_RABBITMQ_INTEGRATION=1 for broker integration',
 )
-def test_rabbitmq_confirms_and_routes_document_event() -> None:
-    url = os.environ.get(
-        'DOCPIPE_INGESTION_RABBITMQ_URL',
-        'amqp://docpipe:docpipe@localhost:5672/docpipe',
-    )
+def test_rabbitmq_confirms_and_routes_document_event(
+    rabbitmq_url: str,
+) -> None:
     event_id = UUID('11111111-2222-3333-4444-555555555555')
     document_id = UUID('12345678-1234-5678-1234-567812345678')
     event = OutboxEvent(
@@ -42,15 +40,21 @@ def test_rabbitmq_confirms_and_routes_document_event() -> None:
             },
         },
         created_at=datetime(2026, 9, 17, 12, tzinfo=UTC),
+        trace_context={
+            'traceparent': (
+                '00-1234567890abcdef1234567890abcdef-1234567890abcdef-01'
+            ),
+            'tracestate': 'vendor=value',
+        },
     )
     publisher = RabbitMQPublisher(
-        url=url,
+        url=rabbitmq_url,
         exchange='docpipe.events',
         queue='docpipe.document.received.v1',
         routing_key='document.received.v1',
         timeout_seconds=5,
     )
-    connection = pika.BlockingConnection(pika.URLParameters(url))
+    connection = pika.BlockingConnection(pika.URLParameters(rabbitmq_url))
     channel = connection.channel()
     channel.queue_purge('docpipe.document.received.v1')
 
@@ -66,4 +70,6 @@ def test_rabbitmq_confirms_and_routes_document_event() -> None:
 
     assert method is not None
     assert properties.message_id == str(event_id)
+    assert properties.headers == event.trace_context
+    assert properties.correlation_id == event.payload['correlation_id']
     assert b'"event_type":"document.received"' in body
