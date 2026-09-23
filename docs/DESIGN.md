@@ -207,16 +207,26 @@ Span da requisição e spans filhos para armazenamento, transação no banco e p
   configurável;
 - a readiness da API consulta banco e storage. RabbitMQ e exporters não são
   dependências de aceitação devido à outbox transacional;
-- métricas e traces podem ser exportados a endpoints configuráveis, sem tornar
-  um backend específico dependência do serviço;
+- métricas são expostas para scrape e traces podem ser exportados por OTLP
+  HTTP a um endpoint configurável; logs são emitidos em stderr. Não há
+  exporter OTLP de métricas ou logs configurado pela aplicação;
 - identificadores individuais aparecem somente em logs e traces quando
   necessários ao diagnóstico, nunca como labels Prometheus.
 
 OpenTelemetry Collector, Prometheus, Grafana, Jaeger, Tempo, Loki, dashboards,
 alertas e armazenamento central não pertencem à arquitetura permanente deste
-repositório. O Compose, as configurações e o dashboard ainda presentes de
-Prometheus, Grafana e Tempo são remanescentes da implementação original da
-Etapa 7 e serão removidos em uma alteração separada de código e infraestrutura.
+repositório. O Compose, as configurações e o dashboard centrais de Prometheus,
+Grafana e Tempo foram removidos na refatoração preparatória à Etapa 8.
+A referência histórica está em `docs/OBSERVABILITY.md`. Os SDKs, exporters,
+endpoints e a propagação da Etapa 7 permanecem.
+
+O encerramento do provider usa uma única thread daemon de limpeza e um prazo
+compartilhado entre chamadas, inclusive no encerramento do processo. Essa
+thread é iniciada junto ao provider, pois Python não permite iniciá-la em
+`atexit`. O shutdown do SDK drena os lotes; não é precedido por `force_flush`,
+cujo timeout não é aplicado pelo processador da versão fixada no lockfile.
+Depois do prazo configurado, o processo pode terminar com perda de spans
+pendentes. Essa perda não altera documentos, eventos ou confirmação do broker.
 
 ## 14. Execução local da `v1.0.0`
 
@@ -330,5 +340,5 @@ Um futuro repositório integrador ou de plataforma poderá compor os serviços,
 operar infraestrutura compartilhada, hospedar a stack central de
 observabilidade e executar testes ponta a ponta ou integrados. Também poderá
 avaliar uma topologia Kubernetes, inclusive Kind para integração local. Esse
-repositório ainda não foi criado ou formalmente aprovado, e sua arquitetura não
-está definida.
+repositório ainda não foi criado e sua arquitetura não está definida. A
+separação de responsabilidades está aprovada; a implementação permanece futura.

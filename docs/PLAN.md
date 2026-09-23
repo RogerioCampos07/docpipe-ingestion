@@ -80,10 +80,11 @@ específico.
 
 OpenTelemetry Collector, Prometheus, Grafana, Jaeger, Tempo, Loki, dashboards,
 alertas, armazenamento e configuração central de observabilidade não pertencem
-à responsabilidade arquitetural futura deste repositório. O Compose, as
-configurações e o dashboard ainda presentes de Prometheus, Grafana e Tempo são
-remanescentes da implementação original da Etapa 7 e serão removidos em uma
-alteração separada de código e infraestrutura.
+à responsabilidade deste repositório. O Compose, as configurações e o
+dashboard centrais de Prometheus, Grafana e Tempo foram removidos em uma
+refatoração preparatória à Etapa 8, sem criar uma nova etapa numerada nem
+reverter a instrumentação da Etapa 7. A referência histórica está em
+`docs/OBSERVABILITY.md`.
 
 ## Etapa 8 — CI com GitHub Actions
 
@@ -175,8 +176,8 @@ Um futuro repositório integrador ou de plataforma poderá concentrar a
 composição dos microsserviços, a configuração integrada, a stack central de
 observabilidade, dashboards, alertas, testes ponta a ponta, testes integrados
 de carga e resiliência, eventual topologia Kubernetes e infraestrutura
-compartilhada. Essa possibilidade ainda não representa um repositório criado,
-uma implementação existente ou uma arquitetura formalmente aprovada. Kind
+compartilhada. A separação de responsabilidades está aprovada; o repositório
+ainda não existe, e sua implementação e arquitetura não estão definidas. Kind
 poderá ser avaliado nesse contexto de integração local, sem compromisso atual.
 
 ## Roadmap da `v1.1.0` — Azure

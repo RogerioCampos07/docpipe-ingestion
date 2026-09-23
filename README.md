@@ -24,8 +24,8 @@ central de observabilidade não fazem parte do escopo desta versão.
 Os microsserviços do DocPipe serão mantidos em repositórios separados, cada um
 com código, testes, CI, imagem, health checks e instrumentação próprios. Um
 futuro repositório integrador ou de plataforma poderá compor os serviços e a
-observabilidade central, mas essa estrutura ainda não foi implementada nem
-formalmente aprovada.
+observabilidade central. A separação de responsabilidades está aprovada;
+esse repositório ainda não existe e sua implementação não está definida.
 
 ### Roadmap da `v1.1.0`
 
@@ -137,9 +137,10 @@ readiness da API porque a outbox preserva eventos aceitos.
 ## Instrumentação e telemetria
 
 API e worker emitem logs JSON com `correlation_id`, `trace_id` e `span_id`.
-O worker expõe métricas e saúde em `127.0.0.1:9001` por padrão. Traces ficam
-desativados no modo simples; para exportar por OTLP a um endpoint configurado,
-use:
+O worker expõe métricas e saúde em `127.0.0.1:9001` por padrão. No modo simples,
+a exportação e a instrumentação automática HTTP ficam desativadas; spans
+manuais e contexto local podem existir. Para exportar por OTLP a um endpoint
+configurado, use:
 
 ```dotenv
 DOCPIPE_INGESTION_TRACES_ENABLED=true
@@ -159,11 +160,16 @@ O utilitário é somente leitura e não imprime payload, nome de arquivo,
 checksum ou chave de storage. Consulte `docs/OBSERVABILITY.md` para consultas,
 catálogos e limitações.
 
-O Compose e as configurações existentes de Prometheus, Grafana e Tempo são
-remanescentes da implementação original da Etapa 7. Eles serão removidos em
-uma alteração separada de código e infraestrutura e não representam a
-responsabilidade arquitetural futura deste repositório. A documentação atual
-define o estado-alvo enquanto essa remoção física ainda não ocorreu.
+Este repositório mantém a instrumentação, sem hospedar uma stack central.
+O Compose contém somente PostgreSQL, RabbitMQ e Azurite. Logs são emitidos
+em stderr, métricas são consultadas nos endpoints locais e traces podem ser
+exportados para um endpoint OTLP HTTP externo. A exportação fica desabilitada
+com `DOCPIPE_INGESTION_TRACES_ENABLED=false` e
+`DOCPIPE_INGESTION_TRACES_EXPORTER=none`.
+
+A retirada da infraestrutura central foi uma refatoração preparatória à
+Etapa 8; a instrumentação da Etapa 7 permanece. A referência histórica para
+recuperar as configurações está em `docs/OBSERVABILITY.md`.
 
 ## Testes e qualidade
 
@@ -182,8 +188,21 @@ DOCPIPE_POSTGRESQL_INTEGRATION=1 uv run pytest -m postgresql
 DOCPIPE_AZURITE_INTEGRATION=1 uv run pytest -m azurite
 DOCPIPE_RABBITMQ_INTEGRATION=1 uv run pytest -m rabbitmq
 DOCPIPE_STACK_INTEGRATION=1 uv run pytest -m stack
-DOCPIPE_OBSERVABILITY_INTEGRATION=1 uv run pytest -m observability
 ```
+
+Os testes de instrumentação integram a suíte padrão e usam exporters em
+memória e simulações, sem Collector. A configuração dos testes ignora o
+`.env` e neutraliza variáveis da aplicação e do SDK antes da coleta. Testes
+que verificam configuração podem definir suas próprias variáveis.
+
+Execute integrações somente em um projeto Compose isolado, com dados
+descartáveis: alguns testes limpam tabelas e filas. Configure explicitamente
+`DOCPIPE_INGESTION_TEST_POSTGRESQL_URL` e
+`DOCPIPE_INGESTION_TEST_AZURITE_CONNECTION_STRING` para os recursos de teste.
+Nas integrações RabbitMQ e de stack, configure
+`DOCPIPE_INGESTION_RABBITMQ_URL`; essa variável é preservada quando o opt-in
+correspondente está ativo. A opção `--env-file` do Compose não exporta essas
+variáveis para o processo pytest.
 
 Os testes usam somente dados sintéticos. Consulte `docs/DESIGN.md` para as
 garantias e limitações da outbox e do armazenamento.
