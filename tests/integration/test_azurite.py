@@ -78,7 +78,7 @@ def test_two_adapters_share_private_streamed_object(
         )
         with pytest.raises(HttpResponseError) as denied:
             BlobServiceClient(
-                account_url='http://127.0.0.1:10000/docpipe',
+                account_url=service.url,
                 api_version='2023-11-03',
             ).get_blob_client(container, key).download_blob().readall()
         assert denied.value.status_code in {401, 403, 404}

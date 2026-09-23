@@ -43,6 +43,7 @@ pytestmark = [
 def test_postgresql_azurite_rabbitmq_flow(
     postgresql_url: str,
     azurite_connection_string: str,
+    rabbitmq_url: str,
 ) -> None:
     migrate(postgresql_url)
     container = f'stack-{uuid4().hex}'
@@ -55,12 +56,20 @@ def test_postgresql_azurite_rabbitmq_flow(
         blob_container=container,
         blob_api_version='2023-11-03',
         storage_chunk_size_bytes=8,
+        rabbitmq_url=rabbitmq_url,
     )
     engine = create_database_engine(settings)
     factory = create_session_factory(engine)
     with factory.begin() as session:
         session.execute(delete(OutboxEventModel))
         session.execute(delete(DocumentModel))
+    broker = RabbitMQPublisher(
+        url=settings.rabbitmq_url,
+        exchange=settings.rabbitmq_exchange,
+        queue=settings.rabbitmq_queue,
+        routing_key=settings.rabbitmq_routing_key,
+        timeout_seconds=settings.rabbitmq_timeout_seconds,
+    )
     rabbit_connection = pika.BlockingConnection(
         pika.URLParameters(settings.rabbitmq_url)
     )
@@ -75,13 +84,6 @@ def test_postgresql_azurite_rabbitmq_flow(
             )
             assert response.status_code == status.HTTP_202_ACCEPTED
             document_id = UUID(response.json()['document_id'])
-            broker = RabbitMQPublisher(
-                url=settings.rabbitmq_url,
-                exchange=settings.rabbitmq_exchange,
-                queue=settings.rabbitmq_queue,
-                routing_key=settings.rabbitmq_routing_key,
-                timeout_seconds=settings.rabbitmq_timeout_seconds,
-            )
             publisher = OutboxPublisher(
                 unit_of_work_factory=partial(SqlAlchemyUnitOfWork, factory),
                 broker=broker,
@@ -93,10 +95,10 @@ def test_postgresql_azurite_rabbitmq_flow(
                 ),
             )
             assert publisher.process_batch() == 1
-            broker.close()
             queried = client.get(f'/v1/documents/{document_id}')
             assert queried.status_code == status.HTTP_200_OK
             assert queried.json()['status'] == 'PUBLISHED'
             assert 'storage_key' not in queried.json()
     finally:
+        broker.close()
         engine.dispose()
