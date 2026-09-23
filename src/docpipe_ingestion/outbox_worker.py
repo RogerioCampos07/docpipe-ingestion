@@ -29,7 +29,6 @@ from docpipe_ingestion.infrastructure.observability.metrics import (
 )
 from docpipe_ingestion.infrastructure.observability.tracing import (
     create_tracer_provider,
-    shutdown_tracer_provider,
 )
 from docpipe_ingestion.infrastructure.observability.worker_server import (
     WorkerMonitoringServer,
@@ -109,10 +108,7 @@ def main() -> None:
         if monitoring is not None:
             monitoring.close()
         engine.dispose()
-        shutdown_tracer_provider(
-            tracer_provider,
-            settings.telemetry_shutdown_timeout_seconds,
-        )
+        tracer_provider.shutdown()
         logger.info(
             'outbox worker stopped',
             extra={'operation': 'service.stop', 'status': 'stopped'},
