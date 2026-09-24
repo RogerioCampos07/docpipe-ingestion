@@ -206,3 +206,15 @@ variáveis para o processo pytest.
 
 Os testes usam somente dados sintéticos. Consulte `docs/DESIGN.md` para as
 garantias e limitações da outbox e do armazenamento.
+
+## Integração contínua
+
+O workflow de CI valida pull requests destinadas à `main`, pushes na `main` e
+execuções manuais. Os checks estáveis são `ci-quality`, `ci-tests` e
+`ci-image`: eles cobrem qualidade, testes sem serviços, integrações reais com
+PostgreSQL, RabbitMQ e Azurite, construção da imagem e um smoke test da API
+empacotada. A imagem não é publicada e nenhum deploy é realizado.
+
+Consulte `docs/CI.md` para os comandos equivalentes, isolamento dos serviços,
+diagnóstico, checks candidatos à proteção da branch e limitações das
+validações locais.
