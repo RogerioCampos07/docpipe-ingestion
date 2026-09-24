@@ -115,7 +115,9 @@ CI valida mudanças. CD permanece evolução futura para releases, publicação 
 artefatos e implantação em ambientes aprovados; a `v1.0.0` não promete entrega
 nem deploy contínuo.
 
-**Estado:** planejada para a `v1.0.0`.
+**Estado:** implementada localmente. A validação integral permanece pendente
+até uma pull request real executar os checks no GitHub Actions e o push
+posterior na `main` confirmar o gatilho correspondente.
 
 ## Etapa 9 — Carga, escalabilidade e resiliência local
 
