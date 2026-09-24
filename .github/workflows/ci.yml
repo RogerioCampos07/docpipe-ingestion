@@ -1,0 +1,282 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >-
+    ci-${{ github.workflow }}-${{ github.event_name }}-${{
+    github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: 0.9.26
+
+jobs:
+  quality:
+    name: ci-quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          prune-cache: true
+          save-cache: true
+          cache-suffix: uv-${{ env.UV_VERSION }}
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+            .python-version
+
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev
+
+      - name: Run Ruff lint
+        run: uv run --locked task lint
+
+      - name: Check Ruff formatting
+        run: uv run --locked task format-check
+
+      - name: Run static type checks
+        run: uv run --locked task typecheck
+
+      - name: Check typos
+        run: uv run --locked typos
+
+  tests:
+    name: ci-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      COMPOSE_PROJECT_NAME: docpipe-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          prune-cache: true
+          save-cache: false
+          cache-suffix: uv-${{ env.UV_VERSION }}
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+            .python-version
+
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev
+
+      - name: Prepare report directory
+        run: |
+          echo "CI_REPORTS=$RUNNER_TEMP/ci-reports" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/ci-reports"
+
+      - name: Run tests without external services
+        run: |
+          uv run --locked pytest \
+            -m "not (postgresql or rabbitmq or azurite or stack)" \
+            --cov=docpipe_ingestion --cov-report= \
+            --junitxml="$CI_REPORTS/unit.xml" -ra
+
+      - name: Verify tests without external services
+        run: >-
+          uv run --locked python .github/scripts/verify_pytest_junit.py
+          "$CI_REPORTS/unit.xml"
+
+      - name: Validate Docker Compose configuration
+        run: >-
+          docker compose --env-file /dev/null -f docker-compose.yml
+          config --quiet
+
+      - name: Pull integration service images
+        run: >-
+          timeout 5m docker compose --env-file /dev/null
+          -f docker-compose.yml pull postgres rabbitmq azurite
+
+      - name: Start isolated integration services
+        run: >-
+          timeout 3m docker compose --env-file /dev/null
+          -f docker-compose.yml up -d --wait --wait-timeout 120
+          postgres rabbitmq azurite
+
+      - name: Configure integration tests
+        run: |
+          echo 'DOCPIPE_POSTGRESQL_INTEGRATION=1' >> "$GITHUB_ENV"
+          echo 'DOCPIPE_RABBITMQ_INTEGRATION=1' >> "$GITHUB_ENV"
+          echo 'DOCPIPE_AZURITE_INTEGRATION=1' >> "$GITHUB_ENV"
+          echo 'DOCPIPE_STACK_INTEGRATION=1' >> "$GITHUB_ENV"
+          echo 'DOCPIPE_INGESTION_TEST_POSTGRESQL_URL=postgresql+psycopg://docpipe:docpipe-local@127.0.0.1:5432/docpipe_ingestion' >> "$GITHUB_ENV"
+          echo 'DOCPIPE_INGESTION_TEST_AZURITE_CONNECTION_STRING=DefaultEndpointsProtocol=http;AccountName=docpipe;AccountKey=ZG9jcGlwZS1sb2NhbC1vbmx5LW5vdC1zZWNyZXQ=;BlobEndpoint=http://127.0.0.1:10000/docpipe;' >> "$GITHUB_ENV"
+          echo 'DOCPIPE_INGESTION_RABBITMQ_URL=amqp://docpipe:docpipe@127.0.0.1:5672/docpipe' >> "$GITHUB_ENV"
+
+      - name: Verify integration configuration
+        shell: bash
+        run: |
+          test "$DOCPIPE_POSTGRESQL_INTEGRATION" = 1
+          test "$DOCPIPE_RABBITMQ_INTEGRATION" = 1
+          test "$DOCPIPE_AZURITE_INTEGRATION" = 1
+          test "$DOCPIPE_STACK_INTEGRATION" = 1
+          test -n "$DOCPIPE_INGESTION_TEST_POSTGRESQL_URL"
+          test -n "$DOCPIPE_INGESTION_TEST_AZURITE_CONNECTION_STRING"
+          test -n "$DOCPIPE_INGESTION_RABBITMQ_URL"
+
+      - name: Run integration tests
+        run: |
+          timeout 10m uv run --locked pytest \
+            -m "postgresql or rabbitmq or azurite or stack" \
+            --cov=docpipe_ingestion --cov-append --cov-report= \
+            --junitxml="$CI_REPORTS/integration.xml" -ra -vv
+
+      - name: Verify required integration tests executed
+        run: |
+          uv run --locked python \
+            .github/scripts/verify_pytest_junit.py \
+            "$CI_REPORTS/integration.xml" \
+            --require-module tests.integration.test_postgresql=2 \
+            --require-module tests.integration.test_rabbitmq=1 \
+            --require-module tests.integration.test_azurite=1 \
+            --require-module tests.contracts.test_storage=1 \
+            --require-module tests.integration.test_shared_stack=1
+
+      - name: Generate coverage reports
+        run: |
+          uv run --locked coverage report --show-missing
+          uv run --locked coverage xml -o "$CI_REPORTS/coverage.xml"
+          uv run --locked coverage html -d "$CI_REPORTS/htmlcov"
+
+      - name: Collect service diagnostics
+        if: failure()
+        run: |
+          docker compose --env-file /dev/null -f docker-compose.yml \
+            ps --all > "$CI_REPORTS/compose-ps.txt"
+          docker compose --env-file /dev/null -f docker-compose.yml \
+            logs --no-color --tail 200 postgres rabbitmq azurite \
+            > "$CI_REPORTS/compose-services.log" 2>&1
+
+      - name: Upload test reports and diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-test-reports-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-reports
+          if-no-files-found: warn
+          retention-days: 7
+          include-hidden-files: false
+
+      - name: Remove isolated integration services
+        if: always()
+        run: >-
+          timeout 2m docker compose --env-file /dev/null
+          -f docker-compose.yml down --volumes --remove-orphans
+
+  image:
+    name: ci-image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI_IMAGE: docpipe-ingestion:ci-${{ github.run_id }}-${{ github.run_attempt }}
+      CI_CONTAINER: docpipe-ingestion-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      CI_VOLUME: docpipe-ingestion-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the application image
+        run: docker build --pull --tag "$CI_IMAGE" .
+
+      - name: Prepare the smoke test database
+        run: |
+          docker volume create "$CI_VOLUME"
+          docker run --rm --volume "$CI_VOLUME:/app/dataset" \
+            "$CI_IMAGE" sh -c \
+            'mkdir -p dataset/documents && alembic upgrade head'
+
+      - name: Start the application image
+        run: |
+          docker run --detach --name "$CI_CONTAINER" \
+            --publish 127.0.0.1:18000:8000 \
+            --volume "$CI_VOLUME:/app/dataset" \
+            --env DOCPIPE_INGESTION_TRACES_ENABLED=false \
+            --env DOCPIPE_INGESTION_TRACES_EXPORTER=none \
+            "$CI_IMAGE"
+
+      - name: Smoke test the packaged application
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error --max-time 5 \
+              http://127.0.0.1:18000/health/live > /dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo 'application did not become live within 60 seconds' >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          curl --fail --silent --show-error --max-time 5 \
+            http://127.0.0.1:18000/health/ready > /dev/null
+          curl --fail --silent --show-error --max-time 5 \
+            http://127.0.0.1:18000/metrics > /dev/null
+
+      - name: Collect image diagnostics
+        if: failure()
+        run: |
+          CI_REPORTS="$RUNNER_TEMP/ci-image-reports"
+          mkdir -p "$CI_REPORTS"
+          docker ps --all --filter "name=^/${CI_CONTAINER}$" \
+            --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' \
+            > "$CI_REPORTS/container-state.txt"
+          docker logs --tail 200 "$CI_CONTAINER" \
+            > "$CI_REPORTS/application.log" 2>&1 || true
+
+      - name: Upload image diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-image-diagnostics-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-image-reports
+          if-no-files-found: warn
+          retention-days: 7
+          include-hidden-files: false
+
+      - name: Remove smoke test resources
+        if: always()
+        run: |
+          docker rm --force "$CI_CONTAINER" > /dev/null 2>&1 || true
+          docker volume rm "$CI_VOLUME" > /dev/null 2>&1 || true
+          docker image rm "$CI_IMAGE" > /dev/null 2>&1 || true
