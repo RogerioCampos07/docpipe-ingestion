@@ -120,6 +120,22 @@ jobs:
           docker compose --env-file /dev/null -f docker-compose.yml
           config --quiet
 
+      - name: Validate local experiment Compose variants
+        env:
+          LAB_PROJECT: docpipe-lab-ci-config
+          LAB_RUN_ID: lab-20260924t000000-00000000
+        run: |
+          docker compose --env-file /dev/null \
+            -f docker-compose.experiments.yml config --quiet
+          docker compose --env-file /dev/null \
+            -f docker-compose.experiments.yml \
+            -f docker-compose.experiments.api-scale.yml \
+            --profile api-scale config --quiet
+          docker compose --env-file /dev/null \
+            -f docker-compose.experiments.yml \
+            -f docker-compose.experiments.worker-scale.yml \
+            --profile worker-scale config --quiet
+
       - name: Pull integration service images
         run: >-
           timeout 5m docker compose --env-file /dev/null

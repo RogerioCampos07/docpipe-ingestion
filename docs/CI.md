@@ -13,9 +13,8 @@ deploy.
 | `ci-tests` | testes sem serviços, Compose, integrações reais e cobertura |
 | `ci-image` | build da imagem e smoke test da API empacotada |
 
-Os três nomes são candidatos a checks obrigatórios na proteção da `main`.
-Essa configuração deve ser feita somente depois que uma pull request real
-registrar os nomes no GitHub. Alterações apenas de documentação também
+Os três nomes são os checks obrigatórios informados para a `main`.
+Alterações apenas de documentação também
 executam todos os checks, pois o workflow não possui filtros de caminhos.
 
 ## Reprodução local
@@ -78,6 +77,11 @@ o projeto ou os volumes persistentes do laboratório para executar os testes.
 Os próprios testes aplicam migrations, criam containers privados no Azurite e
 removem os objetos temporários que possuem.
 
+O job `ci-tests` também valida somente a sintaxe das três variantes Compose
+dos experimentos. Os testes rápidos em `tests/experiments/` verificam
+contratos e proteções sem iniciar serviços. Locust, falhas controladas e
+benchmarks permanecem manuais e não são checks de PR.
+
 O build e a validação mínima da imagem usam o Dockerfile existente. O smoke
 test do CI aplica migrations em um volume SQLite descartável, inicia o comando
 padrão da imagem e exige sucesso em `/health/live`, `/health/ready` e
@@ -104,11 +108,10 @@ segredos de produção, tokens pessoais ou `pull_request_target`.
 
 ## Limites
 
-Validação local de YAML, testes, Compose e imagem não comprova que o workflow
-funciona no GitHub. A Etapa 8 só poderá ser considerada integralmente validada
-depois de uma pull request real executar os três checks e de um push posterior
-na `main` confirmar o gatilho correspondente. A execução manual também só pode
-ser confirmada quando o arquivo estiver na branch padrão.
+Validação local de YAML, testes, Compose e imagem não substitui a execução dos
+jobs no GitHub. A Etapa 8 foi mergeada; os três checks acima devem continuar
+com os mesmos nomes e escopo. O laboratório da Etapa 9 não executa carga nem
+falhas controladas em PRs.
 
 CI termina na validação e no build local da imagem. Publicação, release e
 deploy continuam fora desta etapa. O Dockerfile atual ainda executa como root;

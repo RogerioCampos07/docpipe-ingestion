@@ -187,3 +187,12 @@ Nos experimentos isolados da Etapa 9, devem ser usados somente os sinais e os
 recursos estritamente necessários. Se um backend central for necessário para
 um experimento integrado, ele deverá ser tratado no futuro escopo integrador,
 sem reincorporá-lo à responsabilidade deste serviço.
+
+O laboratório em `docs/EXPERIMENTS.md` coleta `/metrics` de cada processo,
+logs estruturados e snapshots de leitura do banco. O gauge de backlog da API
+é atualizado durante a consulta a `/metrics` e pode conservar o último valor
+se o banco estiver indisponível. O worker tem registry independente; gauges
+de duas APIs não devem ser somados. `published_at` recebe o horário do início
+da tentativa posteriormente confirmada, portanto sua diferença para
+`created_at` é apenas aproximação do tempo até a publicação. A exportação
+OTLP permanece opcional; sem receptor não há armazenamento de spans completos.
