@@ -1,0 +1,12 @@
+{
+  "smoke": {"users": 1, "spawn_rate": 1, "wait_seconds": 2, "warmup_seconds": 10, "measure_seconds": 50, "repetitions": 1},
+  "baseline": {"users": 2, "spawn_rate": 1, "wait_seconds": 2, "warmup_seconds": 30, "measure_seconds": 180, "repetitions": 3},
+  "progressive": {"steps": [2, 4, 8], "spawn_rate": 1, "wait_seconds": 2, "warmup_seconds": 30, "measure_seconds": 120, "repetitions": 3},
+  "api-scale": {"users": 2, "spawn_rate": 1, "wait_seconds": 2, "warmup_seconds": 30, "measure_seconds": 180, "repetitions": 3},
+  "worker-scale": {"documents": 100, "users": 2, "spawn_rate": 1, "wait_seconds": 2, "observe_seconds": 180, "repetitions": 3},
+  "rabbitmq": {"users": 1, "spawn_rate": 1, "wait_seconds": 2, "healthy_seconds": 30, "failure_seconds": 30, "observe_seconds": 180, "repetitions": 2},
+  "azurite": {"users": 1, "spawn_rate": 1, "wait_seconds": 2, "healthy_seconds": 30, "failure_seconds": 30, "observe_seconds": 180, "repetitions": 2},
+  "postgres": {"users": 1, "spawn_rate": 1, "wait_seconds": 2, "healthy_seconds": 30, "failure_seconds": 30, "observe_seconds": 180, "repetitions": 2},
+  "worker": {"users": 1, "spawn_rate": 1, "wait_seconds": 2, "healthy_seconds": 30, "failure_seconds": 30, "observe_seconds": 180, "repetitions": 2},
+  "api": {"users": 1, "spawn_rate": 1, "wait_seconds": 2, "healthy_seconds": 30, "failure_seconds": 30, "observe_seconds": 180, "repetitions": 2}
+}

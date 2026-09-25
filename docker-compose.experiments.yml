@@ -1,0 +1,195 @@
+name: ${LAB_PROJECT:?set LAB_PROJECT}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+x-app-environment: &app-environment
+  DOCPIPE_INGESTION_ENVIRONMENT: experiment
+  DOCPIPE_INGESTION_DATABASE_BACKEND: postgresql
+  DOCPIPE_INGESTION_DATABASE_URL: postgresql+psycopg://docpipe:docpipe-local@postgres:5432/docpipe_ingestion
+  DOCPIPE_INGESTION_STORAGE_BACKEND: azurite
+  DOCPIPE_INGESTION_BLOB_CONNECTION_STRING: DefaultEndpointsProtocol=http;AccountName=docpipe;AccountKey=ZG9jcGlwZS1sb2NhbC1vbmx5LW5vdC1zZWNyZXQ=;BlobEndpoint=http://azurite:10000/docpipe;
+  DOCPIPE_INGESTION_RABBITMQ_URL: amqp://docpipe:docpipe@rabbitmq:5672/docpipe
+  DOCPIPE_INGESTION_BLOB_CONTAINER: documents
+  DOCPIPE_INGESTION_RABBITMQ_QUEUE: docpipe.document.received.v1
+  DOCPIPE_INGESTION_WORKER_METRICS_HOST: 0.0.0.0
+  DOCPIPE_INGESTION_OUTBOX_MAX_ATTEMPTS: ${LAB_OUTBOX_MAX_ATTEMPTS:-5}
+  DOCPIPE_INGESTION_TRACES_ENABLED: 'false'
+  DOCPIPE_INGESTION_TRACES_EXPORTER: none
+
+x-app: &app
+  build: .
+  image: ${LAB_PROJECT:?set LAB_PROJECT}-app
+  environment: *app-environment
+  volumes:
+    - ./experiments:/app/experiments:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+    azurite:
+      condition: service_healthy
+  logging: *logging
+  restart: 'no'
+
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    environment:
+      POSTGRES_DB: docpipe_ingestion
+      POSTGRES_USER: docpipe
+      POSTGRES_PASSWORD: docpipe-local
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U docpipe -d docpipe_ingestion']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    shm_size: 128mb
+    mem_limit: 512m
+    cpus: 0.4
+    logging: *logging
+    restart: 'no'
+
+  rabbitmq:
+    image: rabbitmq:4.1.4-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: docpipe
+      RABBITMQ_DEFAULT_PASS: docpipe
+      RABBITMQ_DEFAULT_VHOST: docpipe
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq/mnesia
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    mem_limit: 512m
+    cpus: 0.3
+    logging: *logging
+    restart: 'no'
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.35.0
+    command: [azurite-blob, --blobHost, 0.0.0.0, --location, /data, --silent]
+    environment:
+      AZURITE_ACCOUNTS: 'docpipe:ZG9jcGlwZS1sb2NhbC1vbmx5LW5vdC1zZWNyZXQ='
+    volumes:
+      - azurite-data:/data
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:10000/',r=>process.exit(r.statusCode?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    mem_limit: 384m
+    cpus: 0.3
+    logging: *logging
+    restart: 'no'
+
+  api:
+    <<: *app
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: [CMD, python, /app/experiments/probe.py, api]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api2:
+    <<: *app
+    profiles: [api-scale]
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: [CMD, python, /app/experiments/probe.py, api]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    <<: *app
+    command: [python, -m, docpipe_ingestion.outbox_worker]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    mem_limit: 384m
+    cpus: 0.5
+    stop_grace_period: 90s
+    healthcheck:
+      test: [CMD, python, /app/experiments/probe.py, worker]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  worker2:
+    <<: *app
+    profiles: [worker-scale]
+    command: [python, -m, docpipe_ingestion.outbox_worker]
+    environment:
+      <<: *app-environment
+      DOCPIPE_INGESTION_WORKER_METRICS_PORT: '9002'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    mem_limit: 192m
+    cpus: 0.25
+    stop_grace_period: 90s
+    healthcheck:
+      test: [CMD, python, /app/experiments/probe.py, worker2]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  locust:
+    build:
+      context: .
+      dockerfile: experiments/Dockerfile.locust
+    image: ${LAB_PROJECT:?set LAB_PROJECT}-locust
+    environment:
+      LAB_RUN_ID: ${LAB_RUN_ID:?set LAB_RUN_ID}
+      LAB_TARGETS: ${LAB_TARGETS:-http://api:8000}
+      LAB_WARMUP: ${LAB_WARMUP:-10}
+      LAB_MAX_POSTS: ${LAB_MAX_POSTS:-2000}
+      LAB_WAIT_SECONDS: ${LAB_WAIT_SECONDS:-2}
+      LAB_CSV_PREFIX: ${LAB_CSV_PREFIX:-locust}
+    volumes:
+      - ./experiments:/app/experiments:ro
+      - ./artifacts/experiments/${LAB_RUN_ID:?set LAB_RUN_ID}:/reports
+    working_dir: /app
+    entrypoint: [locust, -f, /app/experiments/locustfile.py, --headless, --host, 'http://api:8000', --only-summary, --csv, '/reports/${LAB_CSV_PREFIX:-locust}', --html, '/reports/${LAB_CSV_PREFIX:-locust}.html', --users, '${LAB_USERS:-1}', --spawn-rate, '${LAB_SPAWN_RATE:-1}', --run-time, '${LAB_RUN_TIME:-60s}']
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: 0.4
+    logging: *logging
+    restart: 'no'
+
+  collector:
+    <<: *app
+    command: [python, /app/experiments/collect.py]
+    environment:
+      <<: *app-environment
+      LAB_RUN_ID: ${LAB_RUN_ID:?set LAB_RUN_ID}
+    volumes:
+      - ./experiments:/app/experiments:ro
+      - ./artifacts/experiments/${LAB_RUN_ID:?set LAB_RUN_ID}:/reports
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.1
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  azurite-data:

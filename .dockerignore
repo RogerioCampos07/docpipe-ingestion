@@ -11,6 +11,8 @@ htmlcov/
 .pytest_cache/
 .ruff_cache/
 dataset/
+artifacts/
+experiments/
 docs/
 tests/
 docker-compose.yml
