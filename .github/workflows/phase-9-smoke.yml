@@ -1,0 +1,45 @@
+name: Phase 9 smoke (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase-9-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show runner resources
+        run: |
+          free -h
+          df -h
+          docker info --format 'Docker memory: {{.MemTotal}} bytes'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Run preflight
+        run: uv run --locked python -m experiments.lab preflight
+
+      - name: Run smoke
+        run: |
+          set -o pipefail
+          uv run --locked python -m experiments.lab run smoke 2>&1 | tee phase-9-smoke.log
+
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-9-smoke-log
+          path: phase-9-smoke.log
+          if-no-files-found: warn
+          retention-days: 7

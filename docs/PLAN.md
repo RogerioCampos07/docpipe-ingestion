@@ -101,7 +101,7 @@ para `main`, sem realizar entrega ou implantação contínua.
 - usar cache seguro baseado no lockfile;
 - cancelar execuções obsoletas da mesma pull request;
 - configurar timeouts;
-- documentar os checks candidatos à proteção da `main`.
+- documentar os checks usados na proteção da `main`.
 
 **Saída verificável:** pull requests e pushes para `main` executam os checks
 documentados em ambiente limpo, e a imagem é construída e validada sem ser
@@ -115,9 +115,8 @@ CI valida mudanças. CD permanece evolução futura para releases, publicação 
 artefatos e implantação em ambientes aprovados; a `v1.0.0` não promete entrega
 nem deploy contínuo.
 
-**Estado:** implementada localmente. A validação integral permanece pendente
-até uma pull request real executar os checks no GitHub Actions e o push
-posterior na `main` confirmar o gatilho correspondente.
+**Estado:** concluída e mergeada. Os checks obrigatórios são `ci-quality`,
+`ci-tests` e `ci-image`.
 
 ## Etapa 9 — Carga, escalabilidade e resiliência local
 
@@ -148,7 +147,9 @@ uma stack central de observabilidade. Um backend ou visualização central que
 seja necessário a experimentos integrados pertence ao possível repositório
 integrador futuro.
 
-**Estado:** planejada para a `v1.0.0`.
+**Estado:** laboratório implementado nesta branch. A execução e revisão das
+evidências locais ainda são necessárias para concluir a etapa; consulte
+`docs/EXPERIMENTS.md`.
 
 ## Etapa 10 — Consolidação da `v1.0.0`
 

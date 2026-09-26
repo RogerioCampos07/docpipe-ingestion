@@ -25,6 +25,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx2>=2.13.0",
+    "locust>=2.46.6",
     "mypy>=2.3.1",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
@@ -57,7 +58,6 @@ markers = [
     'postgresql: integration tests requiring Docker Compose PostgreSQL',
     'azurite: integration tests requiring Docker Compose Azurite',
     'stack: integration tests requiring all Docker Compose services',
-    'observability: integration tests requiring the observability stack',
 ]
 
 [tool.mypy]

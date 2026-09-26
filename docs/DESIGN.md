@@ -312,6 +312,22 @@ Managed Identity, RBAC, rede privada, disponibilidade, redundância, desempenho
 ou equivalência total com Azure Blob Storage. A compatibilidade de API não
 significa que a `v1.0.0` foi implantada ou validada no Azure.
 
+### Laboratório da Etapa 9
+
+Cada execução de carga ou resiliência possui projeto Docker Compose, banco,
+container Blob e fila RabbitMQ próprios. Um Locust na mesma máquina alterna
+requisições entre duas APIs por endereço interno, quando solicitado, e mede o
+HTTP separadamente da drenagem da outbox. Duas APIs dividem um orçamento fixo
+de CPU e memória; dois workers disputam eventos no PostgreSQL com o mecanismo
+de lock já implementado. Não se presume ganho por replicação.
+
+O worker atual não reconecta sozinho ao RabbitMQ após perder seu canal. Nos
+experimentos, a recuperação do broker inclui reinício explícito do worker.
+Eventos que esgotem tentativas ficam identificáveis e não são reativados
+automaticamente. Essa limitação operacional é preservada nas evidências; a
+entrega do evento continua sendo pelo menos uma vez. Coleta de logs, métricas
+e snapshots ocorre sem stack central ou receptor OTLP obrigatório.
+
 ## 18. Evolução Azure na `v1.1.0`
 
 A `v1.1.0` concentrará a implantação e integração com AKS, Azure Container

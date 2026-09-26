@@ -6,8 +6,10 @@ original por streaming, persiste metadados e uma outbox transacional e publica
 
 ## Versões e estado do desenvolvimento
 
-A versão em desenvolvimento é a `v1.0.0`. As Etapas 1 a 7 estão concluídas e
-integradas à branch principal; as Etapas 8 a 10 permanecem planejadas. A
+A versão em desenvolvimento é a `v1.0.0`. As Etapas 1 a 8 estão concluídas e
+integradas à branch principal. A Etapa 9 possui o laboratório local nesta
+branch e depende dos experimentos reais para validação; a Etapa 10 permanece
+planejada. A
 entrega `v1.0.0` será um laboratório completamente executável e reproduzível
 em ambiente local, sem conta, assinatura ou recursos de cloud provider. Esse
 laboratório não deve ser apresentado como ambiente de produção.
@@ -216,5 +218,24 @@ PostgreSQL, RabbitMQ e Azurite, construção da imagem e um smoke test da API
 empacotada. A imagem não é publicada e nenhum deploy é realizado.
 
 Consulte `docs/CI.md` para os comandos equivalentes, isolamento dos serviços,
-diagnóstico, checks candidatos à proteção da branch e limitações das
+diagnóstico, checks obrigatórios da branch e limitações das
 validações locais.
+
+## Experimentos locais da Etapa 9
+
+O laboratório de carga e resiliência usa um projeto Compose novo por execução,
+sem publicar portas nem usar a stack central de observabilidade. Execute o
+preflight e o smoke antes de perfis mais longos:
+
+```bash
+uv sync --locked --group dev
+uv run --locked python -m experiments.lab preflight
+uv run --locked python -m experiments.lab run smoke
+```
+
+O preflight bloqueia a execução se CPU, memória, espaço ou contexto Docker não
+forem adequados. Locust, os cenários de resiliência, auditoria, recuperação e
+limpeza restrita estão documentados em `docs/EXPERIMENTS.md`. Resultados ficam
+em `artifacts/experiments/<run_id>/`, fora do Git. A instrumentação do serviço
+permanece independente de backend de coleta. A existência dos scripts não
+substitui as evidências dos experimentos reais exigidas para concluir a Etapa 9.
