@@ -41,7 +41,7 @@ services:
     mem_limit: 512m
 
   azurite:
-    image: mcr.microsoft.com/azure-storage/azurite:3.35.0
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
     restart: unless-stopped
     command:
       - azurite-blob

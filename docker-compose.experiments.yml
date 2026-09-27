@@ -74,7 +74,7 @@ services:
     restart: 'no'
 
   azurite:
-    image: mcr.microsoft.com/azure-storage/azurite:3.35.0
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
     command: [azurite-blob, --blobHost, 0.0.0.0, --location, /data, --silent]
     environment:
       AZURITE_ACCOUNTS: 'docpipe:ZG9jcGlwZS1sb2NhbC1vbmx5LW5vdC1zZWNyZXQ='

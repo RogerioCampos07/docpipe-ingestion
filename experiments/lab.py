@@ -452,7 +452,7 @@ def _image_ids(manifest: dict[str, Any]) -> dict[str, str]:
     images = {
         'postgres': 'postgres:17.6-bookworm',
         'rabbitmq': 'rabbitmq:4.1.4-management',
-        'azurite': 'mcr.microsoft.com/azure-storage/azurite:3.35.0',
+        'azurite': 'mcr.microsoft.com/azure-storage/azurite:3.37.0',
         'api_worker': manifest['project'] + '-app',
         'locust': manifest['project'] + '-locust',
     }
