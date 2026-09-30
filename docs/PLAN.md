@@ -6,6 +6,18 @@ está concluída, com escopo redefinido para a instrumentação do serviço. As
 antigas Etapas 8 e 9 foram descartadas; as novas Etapas 8 a 10 completam a
 `v1.0.0` local e reproduzível.
 
+## Diretriz obrigatória em todas as etapas
+
+Todos os microsserviços atuais e futuros do DocPipe devem ser desacoplados,
+independentes e possuir utilidade própria. Toda implementação e revisão deve
+preservar as fronteiras de `DESIGN.md`, seção 19, e os critérios do RNF-009 de
+`REQUIREMENTS.md`, incluindo recursos próprios e contratos compatíveis.
+
+A auditoria anterior, por inspeção estática, concluiu que o Ingestion atende
+à diretriz e não precisa de refatoração. Não houve validação operacional
+naquela auditoria. Este registro não cria uma etapa de refatoração, não
+reclassifica etapas concluídas nem autoriza avançar as etapas pendentes.
+
 ## Etapa 1 — Fundação do repositório
 
 **Objetivo:** criar a base mínima e verificável do serviço.
@@ -130,6 +142,10 @@ Kubernetes.
   aplicável, tratando ganho de desempenho como hipótese experimental;
 - executar individualmente os cenários de resiliência;
 - acompanhar transactional outbox, RabbitMQ e processamento assíncrono;
+- registrar, nos experimentos do Ingestion e de sua infraestrutura, o aceite,
+  armazenamento, registro e publicação sem outros microsserviços ou
+  consumidores de negócio, conforme RNF-009; `PUBLISHED` não comprova
+  processamento posterior;
 - coletar os logs, métricas e traces necessários às evidências;
 - registrar throughput, p50, p95, p99, taxa de erro, CPU, memória e swap;
 - testar reinícios e indisponibilidades temporárias com recuperação controlada;
@@ -157,6 +173,9 @@ evidências locais ainda são necessárias para concluir a etapa; consulte
 
 - revisar requisitos, segurança, privacidade e tratamento de erros;
 - revisar a instrumentação e os checks de CI;
+- revisar as evidências do RNF-009, incluindo instalação, build, migrations,
+  inicialização e validação sem outro checkout, e compatibilidade dos
+  contratos para evolução e implantação independentes;
 - executar e consolidar os testes e as evidências acadêmicas;
 - documentar limitações e o procedimento completo de execução local;
 - verificar imagens, dependências e ausência de segredos reais;
@@ -168,12 +187,12 @@ release fica pronta para a criação posterior da tag.
 
 **Estado:** planejada para a `v1.0.0`.
 
-## Arquitetura futura do DocPipe
+## Autonomia e composição futura do DocPipe
 
-Os microsserviços serão mantidos em repositórios separados. Cada repositório
-deverá possuir código, testes, CI, imagem, health checks, logs estruturados,
-correlation ID, métricas, instrumentação de traces e configuração própria para
-exportar telemetria.
+A autonomia é uma determinação atual, aplicável também aos serviços futuros,
+conforme RNF-009. Cada serviço deve manter ainda imagem, health checks, logs
+estruturados, correlation ID, métricas, instrumentação de traces e
+configuração própria para exportar telemetria.
 
 Um futuro repositório integrador ou de plataforma poderá concentrar a
 composição dos microsserviços, a configuração integrada, a stack central de

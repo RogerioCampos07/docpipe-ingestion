@@ -173,6 +173,42 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 - CI não implica CD. A `v1.0.0` não inclui deploy contínuo nem publicação
   automática de imagens.
 
+### RNF-009 — Autonomia entre microsserviços
+
+Todos os microsserviços atuais e futuros do DocPipe devem ser desacoplados,
+independentes e possuir responsabilidade de negócio delimitada e utilidade
+própria. Devem manter repositório, domínio, banco de dados, migrations,
+configuração, testes e CI próprios. Banco, RabbitMQ e armazenamento são
+dependências legítimas de infraestrutura e não precisam ser opcionais para
+que o serviço seja independente.
+
+**Critérios de aceite do Ingestion**
+
+- com sua infraestrutura necessária disponível e sem outros microsserviços
+  em execução, recebe documento válido, responde `202`, preserva o original,
+  registra metadados e outbox e permite consulta por UUID;
+- publica o evento com consumidores ausentes e topologia RabbitMQ disponível,
+  mantendo publisher confirms, mensagem persistente, `mandatory=True`,
+  retry com backoff e entrega pelo menos uma vez;
+- o aceite HTTP e o estado `PUBLISHED` não aguardam Processing nem conclusão
+  de etapas posteriores; ausência de consumidores não impede inicialização,
+  saúde ou execução da responsabilidade própria;
+- não importa código interno, modelos ORM ou classes de domínio de outro
+  serviço e não acessa diretamente seus bancos, tabelas ou filesystem interno;
+- comunica-se por contratos públicos e versionados, aceitando produtores ou
+  consumidores autorizados e compatíveis sem exigir implementação específica;
+- instala, constrói, aplica migrations, inicia e pode ser implantado usando
+  seu próprio repositório e infraestrutura, sem checkout de outro serviço;
+- mantém testes próprios e CI executáveis sem outros microsserviços,
+  distinguindo testes unitários, de contrato e de integração com
+  infraestrutura dos testes ponta a ponta do sistema;
+- permite evolução e implantação independentes com compatibilidade dos
+  contratos, preservando as regras atuais dos identificadores e da publicação.
+
+A inspeção estática anterior não identificou necessidade de refatoração para
+autonomia. Não houve validação operacional naquela auditoria; os critérios
+acima exigem evidências e não são uma declaração de testes aprovados.
+
 ## 3. Restrições
 
 - Cada microserviço do DocPipe possui banco próprio; o Ingestion não compartilha tabelas.
@@ -243,12 +279,12 @@ FinOps, observabilidade gerenciada, políticas de backup, disponibilidade e
 recuperação e validação da aplicação no ambiente Azure. Azure Service Bus
 permanece apenas como possível substituto futuro do RabbitMQ a ser avaliado.
 
-## 7. Arquitetura futura entre repositórios
+## 7. Autonomia e composição entre repositórios
 
-Os microsserviços do DocPipe serão mantidos em repositórios separados. Cada
-repositório deverá manter código, testes, CI, imagem, health checks, logs
-estruturados, correlation ID, métricas, instrumentação de traces e configuração
-para exportar telemetria.
+A autonomia definida no RNF-009 é obrigatória para os serviços atuais e
+futuros. Cada serviço também deve manter imagem, health checks, logs
+estruturados, correlation ID, métricas, instrumentação de traces e
+configuração para exportar telemetria.
 
 Um futuro repositório integrador ou de plataforma poderá concentrar composição,
 ambiente integrado, observabilidade central, dashboards, alertas, testes ponta
