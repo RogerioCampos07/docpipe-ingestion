@@ -63,6 +63,36 @@ ou escopo do serviço, interrompa a implementação e apresente a divergência.
 Sempre verifique o estado atual do repositório. Esta seção descreve o ponto de
 partida e pode deixar de refletir arquivos já evoluídos.
 
+## Autonomia obrigatória dos microsserviços
+
+Todos os microsserviços atuais e futuros do DocPipe devem ser desacoplados,
+independentes e possuir utilidade própria. Aplique esta determinação em toda
+implementação e revisão:
+
+- mantenha responsabilidade de negócio delimitada, repositório, domínio,
+  banco de dados, migrations, configuração, testes e CI próprios;
+- permita executar a responsabilidade do serviço sem exigir outros
+  microsserviços em execução;
+- comunique serviços por contratos públicos e versionados, aceitando
+  produtores ou consumidores autorizados e compatíveis, sem exigir uma
+  implementação específica;
+- não importe código interno, modelos ORM ou classes de domínio de outro
+  serviço, nem acesse diretamente seu banco, tabelas ou filesystem interno;
+- preserve evolução e implantação independentes, respeitando a
+  compatibilidade dos contratos.
+
+Banco, RabbitMQ e armazenamento são dependências legítimas de infraestrutura.
+Não os torne opcionais apenas para caracterizar independência. Receber,
+registrar e armazenar documentos é uma capacidade própria do Ingestion, sem
+exigir Processing ou conclusão das etapas posteriores. Preserve a outbox,
+as confirmações do broker e a entrega pelo menos uma vez.
+
+A auditoria por inspeção estática não identificou necessidade de refatoração
+para autonomia; ela não realizou validação operacional. Não apresente essa
+conclusão como teste aprovado ou comprovação operacional. Consulte a decisão
+em `docs/DESIGN.md`, seção 19, e os critérios do RNF-009 em
+`docs/REQUIREMENTS.md`.
+
 ## Limites do serviço
 
 - Mantenha o Ingestion responsável somente pelo recebimento, validação,

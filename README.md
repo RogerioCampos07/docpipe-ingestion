@@ -4,6 +4,22 @@ Microserviço de entrada do DocPipe. Recebe PDF, PNG ou JPEG, valida e grava o
 original por streaming, persiste metadados e uma outbox transacional e publica
 `document.received.v1` no RabbitMQ. Não executa OCR, classificação ou extração.
 
+Receber, registrar e armazenar documentos constitui uma capacidade de negócio
+própria do Ingestion. O serviço permite consultar os metadados e o estado da
+ingestão sem exigir Processing ou a conclusão de etapas posteriores. O `202`
+confirma armazenamento e persistência de documento e outbox; `PUBLISHED`
+registra a publicação confirmada pelo broker, sem aguardar um consumidor.
+A outbox transacional e a entrega pelo menos uma vez permanecem obrigatórias.
+
+Todos os microsserviços atuais e futuros do DocPipe devem ser desacoplados,
+independentes e possuir utilidade própria. As fronteiras e proibições estão
+em [DESIGN.md](docs/DESIGN.md#19-autonomia-obrigatória-dos-microsserviços), e
+os critérios verificáveis no RNF-009 de [REQUIREMENTS.md](docs/REQUIREMENTS.md).
+A auditoria anterior concluiu, por inspeção estática, que o Ingestion atende
+à diretriz e não precisa de refatoração. Naquela auditoria não foram executados
+testes nem validação operacional; a conclusão não comprova autonomia em
+execução nem encerra a Etapa 9.
+
 ## Versões e estado do desenvolvimento
 
 A versão em desenvolvimento é a `v1.0.0`. As Etapas 1 a 8 estão concluídas e
@@ -23,8 +39,10 @@ resiliência; evidências reproduzíveis para o TCC; revisão de segurança;
 documentação operacional e a release `v1.0.0`. Kind, Kubernetes e uma stack
 central de observabilidade não fazem parte do escopo desta versão.
 
-Os microsserviços do DocPipe serão mantidos em repositórios separados, cada um
-com código, testes, CI, imagem, health checks e instrumentação próprios. Um
+Cada microsserviço deve manter repositório, domínio, banco de dados, migrations,
+configuração, testes e CI próprios, além de imagem, health checks e
+instrumentação. Sua evolução e implantação devem ser independentes, com
+compatibilidade dos contratos públicos e versionados. Um
 futuro repositório integrador ou de plataforma poderá compor os serviços e a
 observabilidade central. A separação de responsabilidades está aprovada;
 esse repositório ainda não existe e sua implementação não está definida.
@@ -45,6 +63,12 @@ futuramente e não é uma decisão confirmada.
 O modo simples é o padrão: SQLite em `dataset/docpipe-ingestion.db` e arquivos
 privados em `dataset/documents/`. Ele não requer PostgreSQL nem Azurite. O
 RabbitMQ só é necessário para executar o publicador da outbox.
+
+Banco, RabbitMQ e armazenamento são dependências legítimas de infraestrutura;
+independência entre microsserviços não significa ausência dessas dependências.
+O publicador requer RabbitMQ disponível e sua topologia de entrega, mas não
+exige consumidores em execução. A ausência de consumidores não deve impedir
+o aceite de documentos nem tornar a saúde dependente de outro microsserviço.
 
 O laboratório compartilhado usa PostgreSQL, Azurite Blob e RabbitMQ. O Azurite
 é um emulador local da API do Azure Blob Storage e não requer conta, assinatura
