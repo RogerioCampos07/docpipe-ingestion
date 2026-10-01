@@ -272,6 +272,7 @@ uma eventual adoção do Azure Service Bus exige decisão e etapa próprias.
 
 | Decisão | Motivo |
 | --- | --- |
+| Autonomia obrigatória de cada microsserviço | Preserva utilidade própria, execução, evolução e implantação independentes; fronteiras na seção 19 |
 | Resposta `202 Accepted` | O processamento continua de forma assíncrona |
 | `v1.0.0` independente de cloud | Garante laboratório reproduzível sem conta, assinatura ou recursos externos |
 | SQLite no modo simples | Reduz infraestrutura e simplifica o desenvolvimento local |
@@ -345,12 +346,66 @@ ao Azure Blob Storage real. Autenticação, autorização, rede, disponibilidade
 desempenho e operação dos serviços gerenciados somente podem ser validados na
 `v1.1.0`.
 
-## 19. Repositórios dos microsserviços
+## 19. Autonomia obrigatória dos microsserviços
 
-Cada microsserviço do DocPipe será mantido em repositório separado, com código,
-testes, CI, imagem, health checks e instrumentação próprios. Logs estruturados,
-correlation ID, métricas, traces e configuração de exportação permanecem sob a
-responsabilidade de cada serviço.
+É uma determinação arquitetural obrigatória do DocPipe: todos os
+microsserviços atuais e futuros devem ser desacoplados dos demais,
+independentes e possuir utilidade própria. Cada serviço deve:
+
+- ter responsabilidade de negócio delimitada e executá-la sem exigir outros
+  microsserviços em execução;
+- manter repositório, domínio, banco de dados, migrations, configuração,
+  testes e CI próprios, além de imagem, health checks e instrumentação;
+- comunicar-se por contratos públicos e versionados, aceitando produtores ou
+  consumidores autorizados e compatíveis sem depender de implementações
+  específicas;
+- permitir evolução e implantação independentes, respeitando a
+  compatibilidade dos contratos.
+
+É proibido importar código interno, modelos ORM ou classes de domínio de
+outro serviço, acessar diretamente seus bancos ou tabelas ou usar seu
+filesystem interno. Instalação, build, migrations, inicialização e validação
+do serviço devem ser possíveis sem checkout de outro microsserviço.
+
+### Dependências permitidas e fronteira do Ingestion
+
+Banco, RabbitMQ e armazenamento são dependências legítimas de infraestrutura.
+Independência entre microsserviços não significa ausência dessas dependências
+nem exige torná-las opcionais. Compartilhar infraestrutura não autoriza
+acesso ao estado interno de outro serviço. No laboratório, as réplicas do
+Ingestion compartilham seu banco PostgreSQL e seu storage Azurite; o banco
+continua privado ao Ingestion.
+
+Receber, registrar e armazenar documentos constitui uma capacidade própria,
+com consulta de metadados e estado da ingestão. Ela não exige Processing nem
+a conclusão de etapas posteriores. O `202` segue condicionado ao arquivo
+armazenado e ao commit conjunto do documento e da outbox. O worker publica
+`document.received.v1` com mensagem persistente, publisher confirms e
+`mandatory=True`, declarando exchange, fila durável e binding. `PUBLISHED`
+indica publicação confirmada pelo broker, sem esperar resposta de consumidor.
+Ausência de consumidores não equivale a ausência da topologia de entrega.
+
+Permanecem a entrega pelo menos uma vez, retry com backoff e limite de
+tentativas, bem como as regras de `event_id`, `document_id` e
+`correlation_id`. A referência pública `storage_key` identifica um objeto no
+storage configurado; não concede acesso ao banco ou ao filesystem interno,
+nem contém URL pública ou credencial. Integrações com storage compartilhado
+devem usar sua API e autorização, respeitando o contrato do evento.
+
+A readiness da API depende de banco e storage; a do worker depende de banco
+e conexão/canal RabbitMQ. Nenhuma depende da presença ou resposta de
+Processing ou de um consumidor específico.
+
+### Decisão e evidências
+
+A auditoria anterior concluiu, por inspeção estática do repositório, que o
+Ingestion atende à diretriz e não necessita de refatoração para autonomia.
+Essa auditoria não executou testes, build ou infraestrutura e não realizou
+validação operacional. A determinação é obrigatória; sua comprovação em
+execução exige evidências pelos critérios do RNF-009 de `REQUIREMENTS.md`.
+O registro documental não conclui a Etapa 9 nem altera as pendências do plano.
+
+### Composição futura
 
 Um futuro repositório integrador ou de plataforma poderá compor os serviços,
 operar infraestrutura compartilhada, hospedar a stack central de
