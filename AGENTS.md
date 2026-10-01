@@ -46,7 +46,8 @@ ou escopo do serviço, interrompa a implementação e apresente a divergência.
 
 ## Estado inicial do template
 
-- O ambiente local usa Python `3.14.4`; o projeto aceita Python `>=3.13`.
+- O ambiente local usa Python `3.14.4`; o template aceitava Python `>=3.13`.
+  O `pyproject.toml` atual exige Python `>=3.14`.
 - Dependências e ambiente virtual são gerenciados com `uv`.
 - `pytest`, `pytest-cov`, `ruff`, `taskipy` e `typos` são dependências de
   desenvolvimento.
@@ -102,11 +103,18 @@ em `docs/DESIGN.md`, seção 19, e os critérios do RNF-009 em
   notificações, interface web ou autenticação própria neste repositório.
 - Não acesse diretamente bancos ou tabelas de outros microserviços.
 - O banco deste serviço é privado ao Ingestion.
-- Na `v1.0.0`, preserve o modo simples com SQLite para metadados e outbox e o
-  modo de laboratório com PostgreSQL compartilhado.
-- Na `v1.0.0`, preserve o storage local em `dataset/documents/` para execução
-  simples e o Azurite como armazenamento de objetos compartilhado no
-  laboratório.
+- A entrega da `v1.0.0` deve executar em ambiente local/portátil com Docker
+  Compose, PostgreSQL como banco exclusivo do Ingestion, Azurite para blobs
+  privados e RabbitMQ para mensageria, com API e worker separados.
+- PostgreSQL será o único banco operacional suportado. O suporte já existe,
+  mas defaults SQLite/local e a composição principal ainda devem ser ajustados
+  na Etapa 9. Não apresente esse planejamento como implementação concluída.
+- SQLite pode permanecer somente como recurso interno das fixtures existentes,
+  selecionado explicitamente, sem substituir os testes PostgreSQL. Preserve
+  o adaptador local e seus testes sem criar outro percurso obrigatório de
+  release. Não adicione obrigação de suportar dois bancos em execução.
+- Migração do schema não implica transferência de dados SQLite. Não presuma
+  transferência nem apague bancos, volumes ou documentos existentes.
 - Não versione documentos recebidos nem o arquivo do banco SQLite. Preserve no
   Git apenas os diretórios vazios necessários, quando aplicável.
 - Não devolva o binário, URL pública ou credencial de armazenamento nos
@@ -123,14 +131,24 @@ em `docs/DESIGN.md`, seção 19, e os critérios do RNF-009 em
   planejadas até que a etapa correspondente autorize sua adoção.
 - Cada mudança deve ser pequena, verificável e deixar o repositório em estado
   executável quando isso for aplicável à etapa.
-- Não antecipe recursos de etapas posteriores. As Etapas 1 a 7 estão
-  concluídas; a Etapa 7 cobre somente a instrumentação do serviço. As Etapas 8
-  a 10 tratam, respectivamente, de CI, experimentos locais e consolidação da
-  `v1.0.0`.
+- Não antecipe recursos de etapas posteriores. As Etapas 1 a 8 estão
+  registradas como concluídas; a Etapa 7 cobre a instrumentação e a 8, CI.
+  A Etapa 9 conclui a implementação funcional, seus testes e documentação;
+  a Etapa 10 valida o conjunto com dependências reais, corrige defeitos
+  encontrados e encerra a `v1.0.0`, sem etapa adicional de conclusão.
+- As Etapas 9 e 10 continuam pendentes. Inspeção estática, checks anteriores
+  e atualização documental não comprovam seu aceite operacional.
 - Kind e Kubernetes não fazem parte da `v1.0.0`. Não introduza AKS, Azure
   Container Registry nem qualquer recurso Azure nas Etapas 8 a 10.
 - Integrações e implantação em serviços Azure pertencem ao backlog da
   `v1.1.0`; Azure Service Bus permanece uma decisão futura, não confirmada.
+- Planeje carga e resiliência somente após a validação funcional no ambiente
+  Azure com Blob Storage e PostgreSQL. Preserve scripts, workflows, relatórios
+  e evidências históricos, sem exigir novos ensaios para fechar a `v1.0.0`.
+- O adiamento experimental não elimina testes funcionais de falha e retomada
+  previstos nos contratos, não reduz cobertura nem enfraquece a CI. Use tarefas
+  concretas para reenvio de eventos, reinícios e diagnóstico de órfãos; não
+  amplie esse escopo para campanhas de falhas ou metas de desempenho.
 - Antes de modificar contratos HTTP, eventos, migrations ou configuração,
   explique o impacto e confirme que a mudança pertence ao escopo solicitado.
 - Registre decisões arquiteturais relevantes no `docs/DESIGN.md` ou, quando fizer
@@ -184,7 +202,8 @@ em `docs/DESIGN.md`, seção 19, e os critérios do RNF-009 em
 Estas regras passam a ser aplicáveis quando as etapas de persistência e
 mensageria forem solicitadas:
 
-- alterações de schema devem usar migrations Alembic compatíveis com SQLite;
+- alterações de schema devem usar migrations Alembic validadas em PostgreSQL;
+  preserve o histórico existente e crie revisões somente quando necessárias;
 - documento e evento outbox devem ser registrados na mesma transação;
 - eventos devem ser versionados e validados por schema;
 - o envelope deve conter `event_id`, `event_type`, `event_version`,
@@ -194,9 +213,9 @@ mensageria forem solicitadas:
 - nunca descreva a solução como garantia de entrega exatamente uma vez;
 - a estratégia de consistência deve seguir o transactional outbox definido no
   `docs/DESIGN.md`;
-- configure o SQLite com chaves estrangeiras habilitadas, timeout de bloqueio e
-  modo WAL quando os testes demonstrarem que ele é apropriado;
-- não trate SQLite como solução para múltiplas réplicas em produção.
+- quando SQLite for usado internamente nos testes, preserve suas proteções de
+  chaves estrangeiras, timeout e WAL pertinentes; ele não comprova o
+  comportamento PostgreSQL de transações, constraints ou locks.
 
 ## Segurança e privacidade
 
@@ -232,9 +251,12 @@ Quando a instrumentação correspondente fizer parte da etapa solicitada:
 ## Testes
 
 - Toda alteração de comportamento deve incluir ou atualizar testes.
-- Os testes devem ser determinísticos e independentes de rede, relógio real e
-  ordem de execução.
-- Use dublês nas fronteiras externas.
+- Os testes unitários devem ser determinísticos e independentes de rede,
+  relógio real e ordem de execução. Use dublês nas fronteiras externas nesses
+  testes.
+- Integrações devem usar recursos isolados e descartáveis. A validação
+  integrada da Etapa 10 exige PostgreSQL, Azurite e RabbitMQ reais no Compose,
+  API por HTTP e worker separado; não substitua essas integrações por mocks.
 - Cubra o caminho feliz, falhas esperadas e casos-limite relevantes.
 - Não reduza cobertura, enfraqueça asserções nem remova testes apenas para fazer
   a alteração passar.
@@ -270,8 +292,12 @@ tipos quando ela estiver configurada no projeto.
   criação de recursos Azure externos.
 - A `v1.0.0` deve ser completamente executável e reproduzível localmente, sem
   conta, assinatura ou recursos de cloud provider.
-- Docker Compose é o ambiente principal dos experimentos da `v1.0.0`; Kind e
-  Kubernetes não são requisitos desta versão.
+- Docker Compose é o ambiente de execução e validação funcional da `v1.0.0`,
+  com PostgreSQL, Azurite e RabbitMQ. Kind, Kubernetes e experimentos de carga
+  ou resiliência não integram seu fechamento.
+- Considere o notebook de 8 GB, uma API, um worker e verificações sequenciais.
+  Uma VM pode hospedar o mesmo Compose; isso não constitui integração Azure
+  nem autoriza criar infraestrutura externa.
 - O Azurite usa APIs compatíveis com Azure Blob Storage, mas não comprova
   implantação nem validação no Azure.
 - Não crie ou altere infraestrutura externa, recursos Azure ou clusters sem

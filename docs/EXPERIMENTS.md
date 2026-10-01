@@ -1,4 +1,42 @@
-# Experimentos locais da Etapa 9
+# Laboratório experimental histórico
+
+## Estado e relação com o plano atual
+
+Este laboratório foi implementado sob o escopo anterior da Etapa 9. O
+replanejamento preserva scripts, Compose experimentais, workflow manual,
+relatórios e evidências existentes. As instruções, ferramentas, parâmetros e
+perfis abaixo descrevem esse laboratório histórico; não são planejamento de
+novos ensaios nem tarefas obrigatórias das Etapas 9 e 10 atuais.
+
+A Etapa 9 agora conclui a implementação funcional e a Etapa 10 valida o
+serviço completo e encerra a `v1.0.0` com Docker Compose, PostgreSQL próprio,
+Azurite e RabbitMQ. Ensaios experimentais não bloqueiam esse fechamento.
+Testes funcionais de erros, outbox, reenvio, reinícios e persistência continuam
+obrigatórios, conforme `REQUIREMENTS.md`, sem campanhas experimentais de
+injeção de falhas ou metas de desempenho.
+
+O planejamento de carga e resiliência ocorrerá somente após a validação
+funcional do Ingestion no ambiente Azure com Blob Storage e PostgreSQL,
+posterior à entrega futura de suporte Azure na `v1.1.0`. Não se definem novos
+cenários, volumes, concorrência, ferramentas ou metas nesta revisão.
+
+### Evidências encontradas no replanejamento
+
+Na inspeção local, a execução `lab-20260924t235651-3bd95459`, de 24/09/2026,
+possui `manifest.json`, `timeline.jsonl`, `blocked.json`, `summary.json` e
+`service-logs.txt` em `artifacts/experiments/`, ignorados pelo Git. O bloqueio
+foi por memória insuficiente no preflight; o resumo registra zero requisições,
+zero documentos aceitos e auditoria ausente. O manifesto aponta para o commit
+`79ec4c4` com alterações locais. Trata-se de tentativa interrompida, sem
+validação do fluxo ou resultado experimental concluído.
+
+O workflow `.github/workflows/phase-9-smoke.yml` permanece manual e preservado;
+seu nome é histórico. Resultados e artefatos remotos não foram verificados
+nesta inspeção. Não presumir ausência de outros ensaios nem afirmar que foram
+aprovados sem consultar suas evidências. Esta revisão não executou ensaios e
+não modificou artefatos.
+
+## Funcionamento do laboratório existente
 
 Este laboratório mede somente o DocPipe Ingestion. `202` confirma arquivo,
 metadados e evento outbox persistidos; `PUBLISHED` confirma publicação do
@@ -78,11 +116,11 @@ comparação somente após revisar o baseline, a saúde, memória, CPU, swap e
 backlog. O Locust alterna os POSTs entre `api` e `api2` quando há duas APIs e
 consulta cada documento pela outra instância. Isso verifica distribuição e
 estado compartilhado sem introduzir balanceador. Duas APIs usam PostgreSQL e
-Azurite; SQLite e storage local permanecem restritos ao modo simples. Dois
+Azurite; SQLite e storage local pertenciam ao modo simples daquele escopo. Dois
 workers disputam eventos com `FOR UPDATE SKIP LOCKED`; o relatório registra
 tempo de drenagem, tentativas e eventuais duplicatas. A comparação não exige
-ganho de desempenho. Se o notebook não suportar as variantes, registre o
-adiamento para o futuro repositório integrador.
+ganho de desempenho. Esses perfis permanecem como referência histórica; seu
+planejamento futuro segue o marco Azure definido no início deste documento.
 
 Usuários concorrentes são usuários virtuais ativos, não total de requisições.
 O total é a soma acumulada de POSTs e GETs. RPS é essa soma por segundo;
@@ -196,7 +234,10 @@ uv run --locked python -m experiments.lab stop RUN_ID
 de restaurar PostgreSQL, RabbitMQ, Azurite, API e worker. Ele não reinicia a
 carga. Verifique `pending`, `exhausted`, integridade dos blobs e mensagens na
 fila antes de encerrar. Se houver evento esgotado, preserve a evidência e
-investigue a causa; este estágio não possui comando de reenvio controlado.
+investigue a causa; o laboratório existente não possui comando de reenvio
+controlado. Esse comportamento funcional, exigido pelo RNF-003, será
+implementado na nova Etapa 9 e validado na Etapa 10, independentemente dos
+experimentos adiados.
 
 Não há limpeza automática de volumes ou dados. Para examinar uma execução
 descartável **após arquivar suas evidências**, substitua `RUN_ID` pelo valor do
@@ -217,6 +258,7 @@ alguns testes limpam tabelas e filas.
 O gerador, a aplicação e as dependências disputam CPU, RAM, I/O e rede no
 mesmo notebook. Percentis e throughput podem variar com cache, temperatura,
 swap, processos externos e sistema de arquivos. Registre essas condições e
-compare somente execuções com orçamento e massa equivalentes. A Etapa 9 só
-estará completamente validada após executar os cenários e revisar as
-evidências reais; ter os scripts e a CI verdes não substitui essa execução.
+compare somente evidências históricas com orçamento e massa equivalentes.
+Ter scripts e CI verdes não comprova a execução dos ensaios. As Etapas 9 e 10
+atuais seguem seus critérios funcionais em `PLAN.md`, sem exigir a execução
+dos perfis históricos para encerrar a `v1.0.0`.
