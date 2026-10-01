@@ -10,17 +10,21 @@ O DocPipe processa documentos corporativos por meio de microserviços independen
 - preservar o arquivo original e a rastreabilidade do fluxo;
 - desacoplar recebimento e processamento por evento;
 - validar o fluxo completo inicialmente em uma única instância;
-- preservar fronteiras que permitam trocar SQLite e storage local antes da
-  escala horizontal;
-- produzir evidências de desempenho e observabilidade para o TCC;
+- preservar adaptadores que permitam evoluir banco e storage sem alterar
+  regras de negócio ou contratos públicos;
+- produzir evidências funcionais e de observabilidade do serviço;
 - validar localmente o armazenamento compartilhado sem depender de uma conta
   Azure;
-- entregar a `v1.0.0` como laboratório local reproduzível e independente de
-  qualquer cloud provider;
+- entregar a `v1.0.0` completa em ambiente local/portátil com Docker Compose,
+  PostgreSQL próprio, Azurite e RabbitMQ, independente de cloud provider;
 - manter a instrumentação independente do backend de observabilidade;
 - permitir que cada microsserviço evolua em seu próprio repositório;
 - preservar adaptadores e contratos que permitam evoluir para serviços Azure
   na `v1.1.0` sem acoplar o domínio.
+
+O escopo aprovado será implementado na Etapa 9 e validado e encerrado na
+Etapa 10. Esta revisão é documental: não altera os defaults SQLite/local,
+o Compose ou a imagem atuais, nem comprova seu funcionamento operacional.
 
 ## 3. Fora do escopo
 
@@ -33,6 +37,9 @@ O DocPipe processa documentos corporativos por meio de microserviços independen
 - stack central de coleta, armazenamento e visualização de telemetria;
 - composição operacional de todos os microsserviços;
 - Kubernetes na `v1.0.0`.
+- implantação Azure e ensaios experimentais de carga ou resiliência na
+  `v1.0.0`; o planejamento experimental será posterior à validação funcional
+  no Azure com Blob Storage e PostgreSQL.
 
 ## 4. Visão de componentes
 
@@ -40,8 +47,8 @@ O DocPipe processa documentos corporativos por meio de microserviços independen
 | --- | --- |
 | API FastAPI | Receber requisições, validar metadados e expor consultas |
 | Caso de uso de ingestão | Coordenar checksum, armazenamento, persistência e resposta |
-| Repositório de metadados | Isolar o acesso ao SQLite ou PostgreSQL |
-| Adaptadores de storage | Gravar no storage local ou no Azurite |
+| Repositório de metadados | Isolar o acesso ao PostgreSQL próprio do serviço |
+| Adaptadores de storage | Gravar no Azurite no ambiente de entrega; preservar adaptador local auxiliar |
 | Tabela outbox | Registrar eventos na mesma transação dos metadados |
 | Publicador de outbox | Entregar eventos pendentes ao broker e registrar tentativas |
 | Broker | Desacoplar o Ingestion dos consumidores posteriores |
@@ -65,6 +72,10 @@ apagado automaticamente durante uma falha incerta.
 
 ## 6. Armazenamento local
 
+O adaptador local foi implementado nas etapas iniciais e pode permanecer
+para testes e usos auxiliares. O aceite da `v1.0.0` exige Azurite; as regras
+abaixo descrevem o adaptador existente, sem criar outro percurso de release.
+
 - A raiz padrão é `dataset/documents/` e deve ser configurável.
 - A chave física é gerada pelo serviço e não deriva diretamente do nome enviado
   pelo cliente.
@@ -73,19 +84,29 @@ apagado automaticamente durante uma falha incerta.
 - Os arquivos recebidos não devem ser versionados no Git.
 - Escritas devem usar arquivo temporário e renomeação atômica quando possível,
   evitando que arquivos parciais sejam tratados como válidos.
-- O adaptador local deve respeitar a mesma interface que permitirá adotar
-  armazenamento de objetos futuramente.
+- O adaptador local respeita a mesma interface do adaptador de objetos
+  introduzido na Etapa 6.
 
-## 7. Persistência SQLite
+## 7. Persistência e transição para PostgreSQL
 
-O arquivo SQLite fica, por padrão, em `dataset/docpipe-ingestion.db`, com caminho
-configurável por variável de ambiente. O serviço deve habilitar chaves
-estrangeiras e configurar timeout de bloqueio. O modo WAL será usado quando
-validado pelos testes do ambiente alvo.
+O código atual ainda usa SQLite em `dataset/docpipe-ingestion.db` por padrão,
+com chaves estrangeiras, timeout de bloqueio e configuração de WAL. Esse modo
+simples foi a base das etapas iniciais. O suporte PostgreSQL já está presente
+no driver `psycopg[binary]`, no engine SQLAlchemy, nas migrations Alembic, no
+serviço Compose com volume e em `tests/integration/test_postgresql.py`.
+Essas evidências de implementação não são aprovação operacional atual.
 
-SQLite atende ao modo simples de instância única da `v1.0.0`. Ele não deve ser
-apresentado como banco adequado para várias réplicas gravando
-concorrentemente.
+Na Etapa 9, PostgreSQL passa a ser o único banco operacional suportado, sem
+fallback silencioso. SQLite pode permanecer apenas nas fixtures internas já
+existentes, selecionado explicitamente, sem substituir testes reais de
+transações, constraints, locks e migrations PostgreSQL. Não há necessidade
+identificada de novo driver nem de redesenhar tabelas.
+
+Reutilizar a cadeia Alembic existente até `20260918_03`; validar sua aplicação
+em banco vazio e correspondência com os modelos. Revisões novas somente se
+uma correção exigir mudança de schema. Aplicar migrations não transfere dados
+SQLite: não há transferência prevista e os arquivos e volumes existentes
+devem ser preservados.
 
 ## 8. Modelo de dados inicial
 
@@ -98,7 +119,7 @@ concorrentemente.
 | `media_type` | Tipo detectado/validado |
 | `size_bytes` | Tamanho recebido |
 | `sha256` | Checksum hexadecimal |
-| `storage_key` | Caminho relativo e opaco dentro da raiz de documentos |
+| `storage_key` | Chave opaca do blob privado; relativa à raiz no adaptador local auxiliar |
 | `status` | Estado atual da ingestão |
 | `correlation_id` | Correlação ponta a ponta |
 | `created_at` | Data/hora UTC de criação |
@@ -127,6 +148,10 @@ concorrentemente.
 - Erros esperados: `400` para requisição inválida, `413` para tamanho excedido, `415` para tipo não suportado e `503` quando uma dependência essencial impedir a aceitação segura.
 
 Repetições causadas por timeout poderão ser controladas posteriormente por `Idempotency-Key`. O checksum serve para integridade e diagnóstico, não deve ser usado sozinho para rejeitar documentos duplicados.
+
+Na `v1.0.0`, uploads repetidos podem gerar documentos distintos, com novos
+UUIDs e checksum igual. A republicação da outbox mantém o mesmo `event_id`.
+O fechamento verifica esses comportamentos sem introduzir deduplicação nova.
 
 ### `GET /v1/documents/{document_id}`
 
@@ -163,14 +188,28 @@ O evento não deve conter o conteúdo do arquivo, URL pública nem credencial de
 - A entrega é **pelo menos uma vez**; consumidores devem ser idempotentes.
 - O publicador utiliza retry com backoff e limite configurável.
 - Após esgotar tentativas, o evento permanece identificável para diagnóstico e reprocessamento controlado.
-- Timeouts devem ser explícitos para SQLite e broker.
-- A escrita do arquivo e a transação SQLite não formam uma única transação;
+- Timeouts devem ser explícitos para banco, storage e broker.
+- A escrita do blob e a transação PostgreSQL não formam uma única transação;
   arquivos órfãos devem ser detectáveis e reconciliáveis.
+
+O diagnóstico por correlação e o caso de uso de reconciliação já existem.
+Falta disponibilizar o reenvio controlado exigido pelo RNF-003 e documentar o
+acesso operacional à reconciliação. A Etapa 9 deve fornecer esse comando sem
+novo endpoint público, preservar identificadores e payload, impedir alteração
+de eventos já publicados e registrar a ação sem dados sensíveis. A
+reconciliação identifica órfãos e uploads incompletos sem exclusão automática.
+
+O worker atual não reconecta sozinho após perder o canal RabbitMQ. O percurso
+mínimo aprovado documenta restauração do broker e reinício explícito do worker;
+eventos esgotados também exigem reenvio controlado. Reconexão automática não é
+requisito adicional, e uma política de restart não resolve sozinha um processo
+vivo com canal fechado. A Etapa 10 deve comprovar esses procedimentos
+funcionais, sem campanhas experimentais de falhas.
 
 ## 12. Segurança e privacidade
 
-- `dataset/documents/` e o arquivo SQLite não podem ser expostos pelo servidor
-  HTTP como diretórios estáticos.
+- Blobs, banco e volumes são privados. Arquivos locais auxiliares também não
+  podem ser expostos pelo servidor HTTP como conteúdo estático.
 - As permissões locais devem restringir o acesso ao usuário do processo.
 - TLS é obrigatório fora do ambiente local.
 - O serviço aplica limite de requisição e de tamanho de arquivo.
@@ -189,7 +228,7 @@ JSON estruturado com `timestamp`, `level`, `service`, `environment`, `correlatio
 - total de requisições e uploads aceitos/rejeitados;
 - latência HTTP por rota e status;
 - bytes recebidos;
-- duração e falhas de SQLite, sistema de arquivos e broker;
+- duração e falhas de banco, storage e broker;
 - eventos pendentes e idade do evento mais antigo na outbox;
 - tentativas e falhas de publicação.
 
@@ -230,25 +269,34 @@ pendentes. Essa perda não altera documentos, eventos ou confirmação do broker
 
 ## 14. Execução local da `v1.0.0`
 
+Os itens abaixo são critérios da entrega final. O Compose principal atual
+contém apenas as dependências; API e worker estão no Compose experimental.
+A imagem ainda executa como root. Essas lacunas pertencem à Etapa 9, e sua
+comprovação integrada pertence à Etapa 10.
+
 - Imagem Docker executada por usuário não root.
 - Configuração via variáveis de ambiente, validada na inicialização.
 - Segredos fornecidos pela plataforma, nunca incluídos na imagem.
-- O modo simples executa com uma única réplica e usa volume persistente para
-  `dataset/` quando estiver em container.
-- O laboratório compartilhado usa PostgreSQL, Azurite e RabbitMQ locais para
-  permitir múltiplas réplicas da API.
-- Docker Compose é o ambiente principal do laboratório compartilhado.
+- PostgreSQL próprio, Azurite e RabbitMQ executam no Docker Compose principal
+  e preservam metadados/outbox, blobs e mensagens duráveis em volumes.
 - API e worker executam como processos separados.
 - A imagem é construída e validada localmente e pelo CI, sem publicação
   automática.
 - Readiness considera dependências necessárias para aceitar documentos com segurança; liveness verifica apenas o processo.
 - Migrações são executadas de forma controlada, não simultaneamente por todas
   as instâncias.
-- Os experimentos registram CPU, memória, swap e limitações do notebook e
-  preservam volumes e dados durante a interrupção segura.
+- A validação funcional considera o notebook de 8 GB, uma API, um worker e
+  execução sequencial dos checks, sem gerador de carga ou stack central.
+- Uma VM pode hospedar o mesmo Compose; isso não constitui integração com
+  produtos Azure nem autoriza criar infraestrutura.
+- Reinícios e recriação de containers com volumes preservados devem manter
+  documentos aceitos e eventos pendentes. Testes que limpam tabelas e filas
+  usam recursos descartáveis separados das evidências.
 
-Kind e Kubernetes não fazem parte da `v1.0.0`. A versão é um laboratório local
-reproduzível, não uma implantação de produção.
+Kind e Kubernetes não fazem parte da `v1.0.0`. A versão é um serviço completo
+e validado localmente, sem alegação de implantação de produção. O fechamento
+ocorre na Etapa 10, conforme a definição de pronto em `REQUIREMENTS.md`; atos
+de Git, tag e publicação exigem autorização própria.
 
 ## 15. Evolução implementada na Etapa 6
 
@@ -259,9 +307,13 @@ Para os experimentos com múltiplas réplicas, foram adicionados:
   `dataset/documents/`, usando
   Azurite no laboratório local.
 
+Esse é o histórico da Etapa 6. A decisão posterior de adotar PostgreSQL como
+único banco operacional da entrega está na seção 7; não desfaz o trabalho
+anterior nem presume que os testes passaram na revisão atual.
+
 O adaptador de objetos utiliza a API do Azure Blob Storage contra o Azurite.
 Assim, os testes locais não exigem assinatura, credenciais ou recursos Azure.
-O Azure Blob Storage real permanece como destino futuro possível, mas sua
+O Azure Blob Storage real pertence à entrega futura da `v1.1.0`; sua
 configuração, autenticação, RBAC e validação não pertencem à Etapa 6 local.
 
 As trocas devem ocorrer por adaptadores, sem alterar as regras de domínio nem
@@ -275,24 +327,27 @@ uma eventual adoção do Azure Service Bus exige decisão e etapa próprias.
 | Autonomia obrigatória de cada microsserviço | Preserva utilidade própria, execução, evolução e implantação independentes; fronteiras na seção 19 |
 | Resposta `202 Accepted` | O processamento continua de forma assíncrona |
 | `v1.0.0` independente de cloud | Garante laboratório reproduzível sem conta, assinatura ou recursos externos |
-| SQLite no modo simples | Reduz infraestrutura e simplifica o desenvolvimento local |
-| Arquivos em `dataset/documents/` | Permite validar o fluxo sem serviço externo de storage |
+| SQLite no modo simples, decisão histórica | Serviu às etapas iniciais; na entrega final fica restrito ao uso interno de testes |
+| Arquivos em `dataset/documents/`, adaptador existente | Preserva testes e usos auxiliares; Azurite é obrigatório no aceite da versão |
+| PostgreSQL como único banco operacional | Consolida o percurso de entrega e evita suporte obrigatório a dois bancos |
 | Banco privado do serviço | Preserva autonomia e evita acoplamento entre microserviços |
 | Transactional outbox | Reduz a janela de inconsistência entre banco e broker |
 | PostgreSQL, Azurite e RabbitMQ locais | Fornecem infraestrutura compartilhada para o laboratório da `v1.0.0` |
 | Broker atrás de adaptador | Preserva portabilidade; RabbitMQ continua confirmado na `v1.0.0` |
 | Azurite na Etapa 6 | Valida localmente o adaptador de objetos compatível com Azure Blob sem exigir conta Azure |
 | GitHub Actions na Etapa 8 | Valida mudanças continuamente sem implicar deploy contínuo |
-| Docker Compose na Etapa 9 | Sustenta experimentos locais sem cluster obrigatório |
+| Docker Compose nas Etapas 9 e 10 | Consolida o serviço completo e permite validação integrada e fechamento local |
+| Experimentos adiados | Planejamento somente após validação funcional Azure com Blob Storage e PostgreSQL; histórico preservado |
 | Azure na `v1.1.0` | Separa a validação local da implantação e integração com serviços gerenciados |
 | Azure Service Bus não decidido | Mantém sua possível adoção como avaliação futura |
 | Contratos versionados | Facilita evolução independente de produtores e consumidores |
 
 ## 17. Persistência compartilhada local
 
-A Etapa 6 implementa composição explícita dos adaptadores. SQLite e filesystem
-continuam sendo o modo simples. PostgreSQL e Azurite formam o laboratório
-compartilhado; RabbitMQ e os contratos públicos permanecem iguais.
+A Etapa 6 implementou composição explícita dos adaptadores, preservando
+SQLite e filesystem no modo simples à época. O percurso de entrega aprovado
+usa PostgreSQL, Azurite e RabbitMQ; a alteração dos defaults e a consolidação
+do Compose permanecem pendentes na Etapa 9. Os contratos públicos permanecem.
 
 No PostgreSQL, cada worker seleciona um evento elegível com
 `FOR UPDATE SKIP LOCKED`, mantendo o lock durante a publicação confirmada. O
@@ -313,7 +368,13 @@ Managed Identity, RBAC, rede privada, disponibilidade, redundância, desempenho
 ou equivalência total com Azure Blob Storage. A compatibilidade de API não
 significa que a `v1.0.0` foi implantada ou validada no Azure.
 
-### Laboratório da Etapa 9
+### Laboratório experimental histórico
+
+O laboratório foi implementado sob o escopo anterior da Etapa 9. Seus scripts,
+workflows, relatórios e evidências são preservados; sua existência não
+comprova ensaios concluídos nem condiciona o fechamento funcional da versão.
+Os detalhes abaixo descrevem o mecanismo existente, sem planejar novos
+ensaios. O estado das evidências está em `docs/EXPERIMENTS.md`.
 
 Cada execução de carga ou resiliência possui projeto Docker Compose, banco,
 container Blob e fila RabbitMQ próprios. Um Locust na mesma máquina alterna
@@ -331,20 +392,19 @@ e snapshots ocorre sem stack central ou receptor OTLP obrigatório.
 
 ## 18. Evolução Azure na `v1.1.0`
 
-A `v1.1.0` concentrará a implantação e integração com AKS, Azure Container
-Registry, Azure Database for PostgreSQL Flexible Server, Azure Blob Storage
-real, Azure Key Vault, Managed Identity, RBAC, rede e endpoints privados,
-ingress, domínio e TLS no Azure. Também ficam nesse backlog infraestrutura
-como código, análise FinOps, políticas de backup, disponibilidade e
-recuperação e a validação da aplicação no ambiente Azure. Azure Monitor ou
-Application Insights dependem de aprovação. A possível substituição do
-RabbitMQ por Azure Service Bus continua em avaliação e não é uma decisão
-arquitetural confirmada.
+A `v1.1.0` entregará suporte aos produtos e serviços Azure, incluindo Blob
+Storage e PostgreSQL, preservando os contratos públicos. Sua implementação
+será planejada posteriormente; não há implantação cloud nas Etapas 9 e 10.
+A possível substituição do RabbitMQ por Azure Service Bus continua em
+avaliação e não é uma decisão arquitetural confirmada.
 
 Os adaptadores existentes preservam portabilidade, mas o Azurite não equivale
-ao Azure Blob Storage real. Autenticação, autorização, rede, disponibilidade,
-desempenho e operação dos serviços gerenciados somente podem ser validados na
-`v1.1.0`.
+ao Azure Blob Storage real. Autenticação, autorização, rede, disponibilidade
+e operação dos serviços gerenciados exigem validação no ambiente Azure futuro.
+
+Somente após a validação funcional do Ingestion no ambiente Azure com Blob
+Storage e PostgreSQL ocorrerá o planejamento de carga e resiliência. Não são
+definidos agora cenários, volumes, concorrência, ferramentas ou metas.
 
 ## 19. Autonomia obrigatória dos microsserviços
 

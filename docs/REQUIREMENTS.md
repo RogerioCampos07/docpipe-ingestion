@@ -1,5 +1,12 @@
 # Requisitos do DocPipe Ingestion
 
+Este documento define o escopo de entrega aprovado. A `v1.0.0` será concluída
+ao final da Etapa 10 com Docker Compose, PostgreSQL próprio, Azurite e
+RabbitMQ. O replanejamento é documental: os defaults SQLite/local ainda
+existem no código, e a consolidação e a validação integrada permanecem
+pendentes nas Etapas 9 e 10. Implementação existente não equivale a validação
+operacional atual.
+
 ## 1. Requisitos funcionais
 
 ### RF-001 — Receber documento
@@ -27,28 +34,36 @@ O serviço deve validar o documento antes de aceitá-lo.
 
 ### RF-003 — Armazenar original
 
-O serviço deve preservar o arquivo original em storage local ou no container
-privado do Azurite, conforme configuração.
+O serviço deve preservar o arquivo original em container privado do Azurite
+no ambiente de entrega da `v1.0.0`. O adaptador local existente pode permanecer
+para testes e usos auxiliares, sem substituir o aceite com Azurite.
 
 **Critérios de aceite**
 
 - o nome físico é criado pelo sistema e não usa diretamente o nome original;
 - a gravação é realizada por streaming;
-- no backend local, o caminho resolvido permanece em `dataset/documents/`;
+- no adaptador local auxiliar, o caminho resolvido permanece na raiz
+  configurada, por padrão `dataset/documents/`;
 - no Azurite, a chave lógica é usada em container sem acesso público;
 - o diretório não é exposto como conteúdo estático pela API;
 - falha de armazenamento não produz uma resposta de sucesso.
 
 ### RF-004 — Registrar metadados
 
-O serviço deve registrar os metadados necessários em SQLite ou PostgreSQL,
-conforme configuração.
+O serviço deve registrar os metadados necessários em PostgreSQL, banco
+exclusivo do Ingestion e único banco operacional suportado para a `v1.0.0`.
 
 **Critérios de aceite**
 
 - registra UUID, nome sanitizado, tipo, tamanho, SHA-256, chave do objeto, estado e horários UTC;
-- o schema é criado por migrations compatíveis com SQLite e PostgreSQL;
+- o schema é criado por migrations Alembic reproduzíveis em PostgreSQL vazio;
 - o conteúdo binário não é salvo no banco relacional.
+
+SQLite pode permanecer somente como recurso interno das fixtures existentes,
+selecionado explicitamente e sem obrigação de suporte operacional. Testes
+SQLite não substituem a validação de migrations, transações, constraints e
+locks em PostgreSQL. Aplicar migrations de schema não implica transferir dados
+SQLite; não há transferência prevista e os dados existentes serão preservados.
 
 ### RF-005 — Calcular integridade
 
@@ -100,16 +115,16 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 
 - O upload deve utilizar streaming e memória limitada por requisição.
 - A API não deve aguardar OCR ou processamento posterior.
-- O experimento de carga deve medir percentis p50, p95 e p99, throughput e taxa de erro.
-- Metas numéricas finais serão definidas após um teste de baseline documentado; não devem ser inventadas previamente.
+- Ensaios experimentais de carga e metas de desempenho não integram o aceite
+  da `v1.0.0`. Seu planejamento seguirá a condição temporal da seção 6.
 
 ### RNF-002 — Escalabilidade
 
-- O modo simples da `v1.0.0` deve operar corretamente em uma única instância.
-- O domínio não deve depender diretamente de SQLite nem do sistema de arquivos.
-- O laboratório local da `v1.0.0` usa Docker Compose como ambiente principal.
-- A comparação entre uma e múltiplas instâncias deve ocorrer somente quando
-  tecnicamente aplicável, sem pressupor ganho antes do baseline.
+- A validação funcional da `v1.0.0` usa uma API e um worker separados em
+  Docker Compose, com PostgreSQL, Azurite e RabbitMQ.
+- O domínio não deve depender diretamente de um banco ou do sistema de arquivos.
+- Preservar a coordenação concorrente já implementada para a outbox, sem
+  exigir comparação experimental de instâncias para fechar a versão.
 
 ### RNF-003 — Confiabilidade
 
@@ -117,13 +132,23 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 - Operações externas devem possuir timeout.
 - O publicador deve sobreviver a reinicializações sem perder eventos pendentes.
 - Deve existir caminho controlado para identificar e reenviar eventos não publicados.
+- O reenvio de eventos esgotados deve preservar identificadores e payload,
+  impedir alteração de eventos já publicados e registrar a ação com segurança.
+- A confirmação do broker seguida de falha de commit pode causar republicação
+  do mesmo `event_id`; consumidores devem tolerar repetição.
+- A retomada pode exigir reinício explícito do worker após a restauração do
+  broker. Esse procedimento precisa ser documentado e validado; reconexão
+  automática não é requisito novo.
+- Blobs órfãos e uploads incompletos devem ser identificáveis pela
+  reconciliação, sem exclusão automática diante de resultado incerto.
 
 ### RNF-004 — Segurança e LGPD
 
 - Todo tráfego de produção deve usar TLS.
 - Segredos devem vir de configuração protegida da plataforma.
 - Logs não podem incluir conteúdo de arquivo nem dado pessoal desnecessário.
-- O acesso ao diretório e ao arquivo SQLite deve seguir menor privilégio.
+- O acesso ao banco, aos blobs e aos volumes deve seguir menor privilégio;
+  a imagem da aplicação deve executar por usuário não root.
 - O projeto deve documentar retenção, exclusão e rastreabilidade antes de uso com dados pessoais reais.
 - Testes e demonstrações devem usar dados sintéticos ou anonimizados.
 
@@ -140,15 +165,15 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 
 - O domínio e os casos de uso não devem depender diretamente de SQLite, do
   sistema de arquivos, do SDK de Azure ou de RabbitMQ.
-- A configuração deve permitir trocar banco e storage sem alterar regras de
-  negócio.
+- Adaptadores devem permitir a evolução de banco e storage sem alterar regras
+  de negócio; isso não exige manter dois bancos operacionais suportados.
 - O adaptador de objetos deve operar contra o Azurite no ambiente local e
   preservar compatibilidade com a API do Azure Blob Storage para a evolução
   planejada na `v1.1.0`.
 - A `v1.0.0` deve ser totalmente executável e reproduzível sem conta,
   assinatura ou recursos de cloud provider.
-- A aplicação deve ser empacotada em container; `dataset/` deve usar volume
-  persistente quando o modo simples for executado em container.
+- API e worker devem ser empacotados em container e executados separadamente;
+  PostgreSQL, Azurite e RabbitMQ devem usar volumes persistentes no Compose.
 - As integrações externas devem permanecer atrás de adaptadores, sem acoplar o
   domínio a SQLite, PostgreSQL, filesystem, Azurite, Azure ou RabbitMQ.
 
@@ -172,6 +197,10 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 - A proteção da `main` poderá exigir checks documentados após sua definição.
 - CI não implica CD. A `v1.0.0` não inclui deploy contínuo nem publicação
   automática de imagens.
+- Na Etapa 10, a imagem deve ser validada com API e worker e as três
+  dependências reais. Preservar os checks `ci-quality`, `ci-tests` e
+  `ci-image`, cobertura e rejeição de testes obrigatórios ausentes ou
+  ignorados. O adiamento experimental não reduz validações funcionais.
 
 ### RNF-009 — Autonomia entre microsserviços
 
@@ -212,12 +241,15 @@ acima exigem evidências e não são uma declaração de testes aprovados.
 ## 3. Restrições
 
 - Cada microserviço do DocPipe possui banco próprio; o Ingestion não compartilha tabelas.
-- A `v1.0.0` oferece SQLite e `dataset/documents/` no modo simples, limitado a
-  uma réplica com escrita.
-- O laboratório compartilhado da `v1.0.0` usa PostgreSQL, Azurite e RabbitMQ
-  locais e admite múltiplas réplicas da API.
-- A Etapa 6 usa PostgreSQL e Azurite no laboratório local; ela não exige nem
-  cria recursos Azure.
+- A `v1.0.0` entrega o serviço completo em ambiente local/portátil com Docker
+  Compose, PostgreSQL próprio, Azurite e RabbitMQ. SQLite deixa de ser modo
+  operacional na Etapa 9; não haverá fallback automático para ele.
+- A Etapa 6 introduziu PostgreSQL e Azurite no laboratório local, preservando
+  SQLite à época. Esse histórico não exige dois bancos na entrega final nem
+  comprova validação atual. Não foram exigidos recursos Azure nessa etapa.
+- O notebook de 8 GB deve ser considerado na execução funcional, com uma API,
+  um worker e verificações sequenciais. Uma VM pode hospedar o mesmo Compose;
+  isso não constitui integração com produtos Azure.
 - A `v1.0.0` não inclui AKS, Azure Container Registry, Azure Database for
   PostgreSQL Flexible Server, Azure Blob Storage real, Azure Key Vault,
   Managed Identity, RBAC, rede privada, endpoints privados, ingress, domínio,
@@ -241,43 +273,66 @@ acima exigem evidências e não são uma declaração de testes aprovados.
 | CT-003 | Arquivo vazio | requisição rejeitada |
 | CT-004 | Tipo não permitido | `415` e nenhuma aceitação parcial |
 | CT-005 | Tamanho excedido | `413` sem crescimento ilimitado de memória |
-| CT-006 | Diretório sem acesso de escrita | erro controlado e nenhum sucesso falso |
-| CT-006A | Caminho malicioso no nome original | arquivo permanece dentro da raiz configurada |
+| CT-006 | Storage sem acesso de escrita | erro controlado e nenhum sucesso falso; Azurite no aceite e teste local existente preservado |
+| CT-006A | Caminho malicioso no nome original | chave opaca no Azurite; contenção na raiz preservada nos testes do adaptador local |
 | CT-007 | Broker indisponível após aceite | documento preservado e evento pendente na outbox |
 | CT-008 | Reinício do publicador | evento pendente é retomado |
 | CT-009 | Documento inexistente | `404` |
-| CT-010 | Carga concorrente | métricas e relatório reproduzível sem perda de registros |
-| CT-011 | Uma e múltiplas instâncias quando aplicável | comparação controlada sem ganho presumido |
 | CT-012 | Reinício da API e do worker | recuperação sem perda de dados aceitos |
 | CT-013 | PostgreSQL ou Azurite temporariamente indisponível | falha observável e recuperação/persistência verificadas |
+| CT-014 | Upload repetido com os mesmos bytes | documentos distintos e checksum igual são permitidos; sem deduplicação por checksum ou `Idempotency-Key` |
+| CT-015 | Reenvio de evento esgotado não publicado | mesmos identificadores e payload, publicação pelo worker e ação registrada; evento já publicado não é alterado |
+| CT-016 | Confirmação do broker seguida de falha no commit | republicação possível com o mesmo `event_id`, sem criar outro documento |
+| CT-017 | Reinício das dependências e recriação de containers com volumes preservados | metadados, blobs, mensagens duráveis e eventos pendentes permanecem disponíveis |
+
+CT-010 (carga concorrente) e CT-011 (comparação de instâncias) ficam registrados
+como referências históricas retiradas do aceite da `v1.0.0`, sem renumerar os
+demais casos nem apagar testes, scripts ou evidências existentes. Os casos
+funcionais de falha e retomada continuam obrigatórios; não constituem ensaios
+experimentais de resiliência nem campanhas de injeção de falhas.
 
 ## 5. Definição de pronto da `v1.0.0`
 
-A `v1.0.0` estará pronta quando todos os RFs tiverem testes automatizados
-relevantes; migrations SQLite e PostgreSQL forem reproduzíveis; os modos
-simples e compartilhado funcionarem localmente com Docker Compose; imagens e
-dependências forem verificadas; os checks de CI estiverem revisados; e não
-houver segredos reais versionados. API e worker devem executar separadamente e
-emitir a telemetria necessária aos experimentos.
+A Etapa 9 conclui a implementação funcional, seus testes e documentação. A
+Etapa 10 comprova e encerra a `v1.0.0`, sem etapa adicional de conclusão.
+O fechamento exige:
 
-Os testes Locust devem usar dataset sintético e registrar parâmetros,
-throughput, p50, p95, p99, taxa de erro, CPU, memória, comportamento da outbox,
-swap, persistência, métricas e traces. Devem cobrir indisponibilidade e
-recuperação do RabbitMQ, reinícios da API e do worker e indisponibilidade
-temporária do PostgreSQL ou Azurite. Nenhuma meta ou threshold será definido
-antes do baseline. A revisão final deve cobrir segurança, privacidade, limites
-de recursos, documentação operacional, evidências do TCC, limitações, release
-candidate e preparação da tag `v1.0.0`.
+- instalação reproduzível pelas instruções do repositório, migrations em
+  PostgreSQL vazio e inicialização completa em Docker Compose;
+- API e worker separados, com PostgreSQL próprio, Azurite e RabbitMQ reais,
+  sem mocks dessas integrações na validação integrada e sem Processing;
+- conferência conjunta do original privado, SHA-256, metadados, outbox e
+  mensagens publicadas conforme os contratos;
+- testes de contratos, erros, duplicidade permitida, reenvio controlado,
+  diagnóstico de órfãos e persistência após reinícios;
+- RFs e RNFs obrigatórios vinculados a testes e evidências da revisão
+  candidata, incluindo checks pertinentes aprovados no GitHub;
+- imagem sem root, dependências verificadas, ausência de segredos reais e
+  revisão de segurança, privacidade e instrumentação;
+- documentação de instalação, configuração, execução e contratos revisada,
+  versão coerente, limitações e decisão de aceite registradas.
+
+Nenhum requisito obrigatório pendente ou validação essencial não executada
+pode ser tratado como simples limitação para declarar a versão concluída.
+Tag e publicação são atos formais posteriores, vinculados à revisão validada
+e sujeitos a autorização específica, assim como commit, push, PR e merge.
+O fechamento técnico e o estado desses atos devem ser registrados na Etapa 10;
+não afirmar publicação enquanto ela estiver pendente.
+
+Carga e resiliência experimentais não bloqueiam esse fechamento. As evidências
+históricas permanecem preservadas, sem substituir a comprovação funcional.
 
 ## 6. Backlog da `v1.1.0`
 
-A `v1.1.0`, sem caráter de requisito para a `v1.0.0`, fica reservada para AKS,
-Azure Container Registry, Azure Database for PostgreSQL Flexible Server, Azure
-Blob Storage real, Azure Key Vault, Managed Identity, RBAC, rede e endpoints
-privados, ingress, domínio e TLS no Azure, infraestrutura como código, análise
-FinOps, observabilidade gerenciada, políticas de backup, disponibilidade e
-recuperação e validação da aplicação no ambiente Azure. Azure Service Bus
-permanece apenas como possível substituto futuro do RabbitMQ a ser avaliado.
+A `v1.1.0` entregará suporte aos produtos e serviços Azure, incluindo Blob
+Storage e PostgreSQL, preservando a compatibilidade dos contratos públicos.
+Implementação e validação desse ambiente serão planejadas posteriormente e
+não são requisitos da `v1.0.0`. Azure Service Bus permanece uma decisão futura,
+não confirmada.
+
+O planejamento de carga e resiliência ocorrerá somente após a validação
+funcional do Ingestion no ambiente Azure com Blob Storage e PostgreSQL. Não
+se definem aqui cenários, volumes, concorrência, ferramentas ou metas.
 
 ## 7. Autonomia e composição entre repositórios
 

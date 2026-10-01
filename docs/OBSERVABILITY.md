@@ -71,8 +71,8 @@ FastAPI cria o span servidor. Spans manuais cobrem `document.ingest`,
 payload versionado de `document.received.v1` não muda. Eventos antigos sem
 carrier iniciam novo trace.
 
-A exportação e a instrumentação automática HTTP ficam desativadas no modo
-simples. Spans manuais e contexto local ainda podem existir, inclusive
+A exportação e a instrumentação automática HTTP ficam desativadas por padrão.
+Spans manuais e contexto local ainda podem existir, inclusive
 `trace_id` em logs. Para exportar traces por OTLP HTTP:
 
 ```dotenv
@@ -183,10 +183,16 @@ visualização, dashboards, alertas e experimentos integrados. Esse repositório
 ainda não existe e sua arquitetura permanece sujeita a avaliação. A separação
 de responsabilidades está aprovada; isso não define sua implementação.
 
-Nos experimentos isolados da Etapa 9, devem ser usados somente os sinais e os
-recursos estritamente necessários. Se um backend central for necessário para
-um experimento integrado, ele deverá ser tratado no futuro escopo integrador,
-sem reincorporá-lo à responsabilidade deste serviço.
+As Etapas 9 e 10 consolidam e validam o Ingestion com Docker Compose,
+PostgreSQL próprio, Azurite e RabbitMQ. Os sinais existentes apoiam os testes
+funcionais de aceitação, publicação, erros e retomada; uma stack central não
+é necessária para esse aceite. O replanejamento não altera a instrumentação.
+
+O laboratório da antiga Etapa 9 permanece como histórico. O planejamento de
+carga e resiliência ocorrerá somente após a validação funcional no ambiente
+Azure com Blob Storage e PostgreSQL. Se um backend central for necessário
+futuramente, deverá ser tratado no escopo integrador, sem reincorporá-lo à
+responsabilidade deste serviço.
 
 O laboratório em `docs/EXPERIMENTS.md` coleta `/metrics` de cada processo,
 logs estruturados e snapshots de leitura do banco. O gauge de backlog da API

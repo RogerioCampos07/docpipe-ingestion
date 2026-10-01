@@ -22,22 +22,25 @@ execução nem encerra a Etapa 9.
 
 ## Versões e estado do desenvolvimento
 
-A versão em desenvolvimento é a `v1.0.0`. As Etapas 1 a 8 estão concluídas e
-integradas à branch principal. A Etapa 9 possui o laboratório local nesta
-branch e depende dos experimentos reais para validação; a Etapa 10 permanece
-planejada. A
-entrega `v1.0.0` será um laboratório completamente executável e reproduzível
-em ambiente local, sem conta, assinatura ou recursos de cloud provider. Esse
-laboratório não deve ser apresentado como ambiente de produção.
+A versão em desenvolvimento é a `v1.0.0`. As Etapas 1 a 8 permanecem
+registradas como concluídas e integradas; isso não comprova funcionamento da
+revisão atual. A Etapa 9 foi replanejada para concluir a implementação
+funcional e a Etapa 10 para validar o conjunto e encerrar a versão. Ambas
+continuam pendentes; esta atualização documental não as implementa.
 
-O escopo consolidado da `v1.0.0` inclui API FastAPI, SQLite e storage local no
-modo simples; PostgreSQL, Azurite e RabbitMQ no laboratório compartilhado;
-transactional outbox; API e worker separados; Docker Compose; logs
-estruturados; correlation ID; métricas e instrumentação de traces; health
-checks; testes automatizados; CI com GitHub Actions; testes locais de carga e
-resiliência; evidências reproduzíveis para o TCC; revisão de segurança;
-documentação operacional e a release `v1.0.0`. Kind, Kubernetes e uma stack
-central de observabilidade não fazem parte do escopo desta versão.
+A `v1.0.0` entregará o serviço completo, autônomo e validado em ambiente
+local/portátil com Docker Compose, PostgreSQL como banco próprio, Azurite para
+blobs privados e RabbitMQ para mensageria. Inclui API FastAPI e worker
+separados, transactional outbox, logs estruturados, correlation ID, métricas,
+traces, health checks, testes automatizados, CI, revisão de segurança,
+evidências funcionais e documentação operacional e de contratos.
+
+A entrega não requer conta, assinatura ou recursos de cloud provider e não
+deve ser apresentada como implantação de produção. Kind, Kubernetes,
+observabilidade central e ensaios experimentais de carga ou resiliência não
+integram seu fechamento. Os critérios e procedimentos estão em
+[PLAN.md](docs/PLAN.md); não haverá uma etapa adicional para concluir a versão.
+Atos de Git, tag e publicação de release exigem autorização específica.
 
 Cada microsserviço deve manter repositório, domínio, banco de dados, migrations,
 configuração, testes e CI próprios, além de imagem, health checks e
@@ -49,20 +52,34 @@ esse repositório ainda não existe e sua implementação não está definida.
 
 ### Roadmap da `v1.1.0`
 
-A `v1.1.0` fica reservada para implantação e integração Azure: AKS, Azure
-Container Registry, Azure Database for PostgreSQL Flexible Server, Azure Blob
-Storage real, Azure Key Vault, Managed Identity, RBAC, rede e endpoints
-privados, ingress, domínio e TLS no Azure, infraestrutura como código, análise
-FinOps, observabilidade gerenciada, políticas de backup, disponibilidade e
-recuperação e validação da aplicação nesse ambiente. A possível troca de
-RabbitMQ por Azure Service Bus será avaliada
-futuramente e não é uma decisão confirmada.
+A `v1.1.0` entregará suporte aos produtos e serviços Azure, incluindo Blob
+Storage e PostgreSQL, preservando a compatibilidade dos contratos públicos.
+Sua implementação será planejada posteriormente. A possível troca de
+RabbitMQ por Azure Service Bus não é uma decisão confirmada.
 
-## Modos locais
+O planejamento de carga e resiliência ocorrerá somente após a validação
+funcional nesse ambiente Azure com Blob Storage e PostgreSQL. Scripts,
+workflows e evidências históricos permanecem preservados.
 
-O modo simples é o padrão: SQLite em `dataset/docpipe-ingestion.db` e arquivos
-privados em `dataset/documents/`. Ele não requer PostgreSQL nem Azurite. O
-RabbitMQ só é necessário para executar o publicador da outbox.
+## Implementação atual e configuração de entrega
+
+O código e `.env.example` ainda usam SQLite em `dataset/docpipe-ingestion.db`
+e arquivos privados em `dataset/documents/` por padrão. A Etapa 9 deverá
+substituir esse modo operacional por PostgreSQL e Azurite, sem fallback
+silencioso. SQLite poderá permanecer somente nas fixtures internas existentes;
+isso não representa suporte a dois bancos na entrega final.
+
+PostgreSQL já possui driver `psycopg[binary]`, engine SQLAlchemy, migrations
+Alembic, testes em `tests/integration/test_postgresql.py` e serviço com volume
+em `docker-compose.yml`. Azurite e RabbitMQ também possuem adaptadores e testes.
+Essas são evidências de implementação, não resultados de execução atual.
+
+O Compose principal contém somente as três dependências; API e worker estão
+no Compose experimental. Consolidá-los no percurso principal e executar a
+imagem sem root são tarefas pendentes. A validação integrada atual usa
+`TestClient` e chama o publicador diretamente; ainda é necessário comprovar
+API por HTTP e worker separados na imagem. O pacote está em `0.1.0` e o
+OpenAPI declara `1.0.0`; o alinhamento ocorrerá no fechamento da Etapa 10.
 
 Banco, RabbitMQ e armazenamento são dependências legítimas de infraestrutura;
 independência entre microsserviços não significa ausência dessas dependências.
@@ -79,27 +96,22 @@ Compatibilidade de API não significa equivalência completa: a `v1.0.0` não é
 implantada nem validada no Azure Blob Storage real ou em qualquer outro
 serviço Azure.
 
-| Banco | Storage | Uso |
-| --- | --- | --- |
-| SQLite | local | desenvolvimento e testes rápidos |
-| PostgreSQL | local | banco compartilhado com arquivos locais |
-| PostgreSQL | Azurite | laboratório compartilhado completo |
-| SQLite | Azurite | composição suportada, ainda limitada a uma instância SQLite |
+## Preparação com a implementação atual
 
-## Preparação
-
-Requer Python 3.14, `uv` e Docker Compose.
+Os comandos abaixo continuam descrevendo a implementação disponível: as
+dependências executam no Compose, e API/worker no host com Python 3.14 e `uv`.
+O percurso integralmente conteinerizado será documentado e comprovado nas
+Etapas 9 e 10; não depende da execução de experimentos.
 
 ```bash
 uv sync --locked
 cp .env.example .env
 ```
 
-O `.env` é local e não deve ser versionado. Para o modo simples, preserve
-`DOCPIPE_INGESTION_DATABASE_BACKEND=sqlite` e
-`DOCPIPE_INGESTION_STORAGE_BACKEND=local`.
+O `.env` é local e não deve ser versionado. O exemplo ainda contém os defaults
+SQLite/local; ajuste as variáveis abaixo para usar a infraestrutura aprovada.
 
-## Laboratório compartilhado
+## PostgreSQL, Azurite e RabbitMQ disponíveis
 
 Configure no `.env`:
 
@@ -125,8 +137,9 @@ uv run alembic upgrade head
 uv run python -m docpipe_ingestion.init_blob_storage
 ```
 
-O PostgreSQL do laboratório pode começar vazio; não existe migração automática
-dos dados do SQLite.
+O PostgreSQL pode começar vazio. Aplicar migrations cria/evolui o schema;
+não existe transferência automática de dados SQLite nem necessidade presumida
+de realizá-la. Preserve arquivos e volumes existentes.
 
 Execute API e worker em terminais separados:
 
@@ -163,7 +176,7 @@ readiness da API porque a outbox preserva eventos aceitos.
 ## Instrumentação e telemetria
 
 API e worker emitem logs JSON com `correlation_id`, `trace_id` e `span_id`.
-O worker expõe métricas e saúde em `127.0.0.1:9001` por padrão. No modo simples,
+O worker expõe métricas e saúde em `127.0.0.1:9001` por padrão. Por padrão,
 a exportação e a instrumentação automática HTTP ficam desativadas; spans
 manuais e contexto local podem existir. Para exportar por OTLP a um endpoint
 configurado, use:
@@ -186,8 +199,15 @@ O utilitário é somente leitura e não imprime payload, nome de arquivo,
 checksum ou chave de storage. Consulte `docs/OBSERVABILITY.md` para consultas,
 catálogos e limitações.
 
+O reenvio controlado de eventos não publicados, inclusive esgotados, ainda
+será implementado na Etapa 9. O worker atual pode exigir reinício explícito
+após perder o canal RabbitMQ; reinício não reativa eventos esgotados. A
+reconciliação existente identifica órfãos e uploads incompletos sem exclusão
+automática; seu acesso operacional também deve ser documentado nessa etapa.
+
 Este repositório mantém a instrumentação, sem hospedar uma stack central.
-O Compose contém somente PostgreSQL, RabbitMQ e Azurite. Logs são emitidos
+O Compose principal atual contém somente PostgreSQL, RabbitMQ e Azurite;
+API e worker serão incluídos na Etapa 9. Logs são emitidos
 em stderr, métricas são consultadas nos endpoints locais e traces podem ser
 exportados para um endpoint OTLP HTTP externo. A exportação fica desabilitada
 com `DOCPIPE_INGESTION_TRACES_ENABLED=false` e
@@ -233,6 +253,13 @@ variáveis para o processo pytest.
 Os testes usam somente dados sintéticos. Consulte `docs/DESIGN.md` para as
 garantias e limitações da outbox e do armazenamento.
 
+A Etapa 10 exigirá conferência conjunta de blob, metadados, outbox e mensagem
+com os componentes reais do Compose, além de contratos, erros, uploads
+repetidos, republicação, reenvio e persistência após reinícios. Essas
+verificações funcionais não são ensaios experimentais de resiliência. Para o
+notebook de 8 GB, o percurso usa uma API, um worker e verificações sequenciais;
+uma VM pode hospedar o mesmo Compose sem caracterizar integração Azure.
+
 ## Integração contínua
 
 O workflow de CI valida pull requests destinadas à `main`, pushes na `main` e
@@ -241,25 +268,24 @@ execuções manuais. Os checks estáveis são `ci-quality`, `ci-tests` e
 PostgreSQL, RabbitMQ e Azurite, construção da imagem e um smoke test da API
 empacotada. A imagem não é publicada e nenhum deploy é realizado.
 
+O smoke atual da imagem usa SQLite e não valida o worker. Na Etapa 10 ele
+deverá cobrir a configuração PostgreSQL/Azurite/RabbitMQ com API e worker,
+preservando os checks, cobertura e exigência de integrações executadas.
+
 Consulte `docs/CI.md` para os comandos equivalentes, isolamento dos serviços,
 diagnóstico, checks obrigatórios da branch e limitações das
 validações locais.
 
-## Experimentos locais da Etapa 9
+## Histórico experimental preservado
 
-O laboratório de carga e resiliência usa um projeto Compose novo por execução,
-sem publicar portas nem usar a stack central de observabilidade. Execute o
-preflight e o smoke antes de perfis mais longos:
+O laboratório implementado sob a antiga Etapa 9 permanece em `experiments/`,
+nos Compose experimentais e no workflow manual. Seus comandos e limitações
+estão preservados em [EXPERIMENTS.md](docs/EXPERIMENTS.md), sem constituir
+roteiro obrigatório das novas etapas. Resultados ficam em
+`artifacts/experiments/<run_id>/`, fora do Git.
 
-```bash
-uv sync --locked --group dev
-uv run --locked python -m experiments.lab preflight
-uv run --locked python -m experiments.lab run smoke
-```
-
-O preflight bloqueia a execução se CPU, memória, espaço ou contexto Docker não
-forem adequados. Locust, os cenários de resiliência, auditoria, recuperação e
-limpeza restrita estão documentados em `docs/EXPERIMENTS.md`. Resultados ficam
-em `artifacts/experiments/<run_id>/`, fora do Git. A instrumentação do serviço
-permanece independente de backend de coleta. A existência dos scripts não
-substitui as evidências dos experimentos reais exigidas para concluir a Etapa 9.
+A evidência local inspecionada registra uma tentativa de smoke bloqueada por
+memória, sem requisições executadas. A existência dos scripts ou do workflow
+não comprova ensaio concluído. Preservar outros relatórios e evidências
+disponíveis sem atribuir resultados não verificados. Novos experimentos não
+bloqueiam a `v1.0.0` e seu planejamento segue o marco Azure descrito acima.
