@@ -4,8 +4,10 @@ O plano é incremental. Cada etapa deve terminar com resultado verificável e
 documentação atualizada. As Etapas 1 a 8 permanecem registradas como concluídas;
 esse histórico não comprova o funcionamento da revisão atual. A Etapa 9
 conclui a operação local, suas provas funcionais integradas e a adequação do
-`ci-image`. A Etapa 10 revisa as evidências, verifica a versão candidata e
-prepara o aceite local da `v1.0.0`.
+`ci-image`. Sua implementação foi mergeada; o alcance do aceite é examinado
+na auditoria `docs/RELEASE_AUDIT.md`. A Etapa 10 tem duas fases: 10a, auditoria
+de requisitos, segurança, documentação, CI e evidências; 10b, correção das
+pendências aprovadas, validação final e preparação do aceite local `v1.0.0`.
 
 A entrega será local/portátil com Docker Compose, PostgreSQL como banco
 exclusivo do Ingestion, Azurite para blobs privados e RabbitMQ para mensageria.
@@ -259,10 +261,10 @@ concreta.
 **Fora do escopo:** recursos funcionais adicionais, Azure, Kubernetes,
 observabilidade central e ensaios experimentais de carga ou resiliência.
 
-**Estado:** implementação em andamento; aceite pendente até todas as
-validações integradas e os checks exigidos passarem. Reaproveitar os
-componentes corretos existentes; código e documentação sem execução não
-concluem a etapa.
+**Estado:** implementação mergeada em `7e48d5f`, com os três checks do GitHub
+Actions aprovados nessa revisão. A auditoria 10a identificou cenários com
+comprovação parcial e limites de recursos a fechar na 10b; portanto o aceite
+integral da candidata permanece pendente. Ver `docs/RELEASE_AUDIT.md`.
 
 ## Etapa 10 — Revisão da candidata local `v1.0.0`
 
@@ -270,28 +272,36 @@ concluem a etapa.
 candidata e concluir sua preparação e aceite local como `v1.0.0`, com
 requisitos atendidos, resultados rastreáveis e documentação reproduzível.
 
-### Tarefas em ordem de dependência
+### Phase 10a — Auditoria da versão candidata
 
-1. **10.1 — Revisar evidências da Etapa 9.** Conferir revisão, versões,
-   configuração não sensível, ambiente, comandos e resultados. Rastrear cada
-   RF/RNF obrigatório aos testes, relatórios e diagnósticos sanitizados;
-   investigar lacunas antes de aceitar a candidata.
-2. **10.2 — Verificar a versão candidata.** Alinhar versão do pacote,
-   lockfile, metadados e documentação, preservando `/v1` e
-   `document.received.v1`. Reexecutar as verificações necessárias para
-   confirmar que os resultados pertencem ao estado candidato e verificar os
-   três checks no GitHub Actions quando a revisão passar pelo fluxo manual.
-3. **10.3 — Corrigir defeitos da candidata e fechar evidências.** Corrigir
-   problemas comprovados com regressões e repetir as verificações afetadas.
-   Revisar segurança, privacidade, contratos, instalação, configuração,
-   operação e limitações. Preservar relatórios sanitizados e referências
-   duráveis antes de expirarem artefatos; não versionar documentos, segredos
-   ou dumps.
-4. **10.4 — Registrar a preparação local da `v1.0.0`.** Registrar revisão
-   candidata, notas de versão, evidências, limitações e decisão de aceite.
-   Distinguir o fechamento local de integração/publicação formal, que seguem
-   as autorizações e o fluxo manual aplicáveis. Azure e experimentos futuros
-   não são pré-requisitos desse aceite.
+Conferir a revisão, versões, configuração não sensível, ambiente, comandos,
+resultados locais e os três checks do GitHub Actions. Rastrear cada RF, RNF e
+CT obrigatório à implementação, ao teste e ao resultado, separando ausência
+de evidência de defeito confirmado. Revisar segurança, privacidade,
+dependências, operação, documentação e limitações. Registrar matriz, achados,
+prioridades, bloqueadores e trabalho objetivo da 10b em
+`docs/RELEASE_AUDIT.md`, sem correções funcionais ou alinhamento de versão.
+
+**Estado:** auditoria documentada, com pendências para a 10b. Sua conclusão não
+constitui aceite da `v1.0.0`.
+
+### Phase 10b — Correções, validação final e preparação da release
+
+1. Corrigir os defeitos e fechar as lacunas obrigatórias aprovadas no relatório
+   10a, com regressões e repetição das verificações afetadas. Preservar
+   relatórios sanitizados e referências duráveis; não versionar documentos,
+   segredos ou dumps.
+2. Alinhar versão do pacote, lockfile, metadados e documentação, preservando
+   `/v1` e `document.received.v1`. Verificar contratos, segurança, privacidade,
+   dependências, instalação, operação e limitações na revisão candidata final.
+3. Reexecutar os gates necessários e confirmar os três checks no GitHub
+   Actions quando a revisão passar pelo fluxo manual.
+4. Registrar revisão candidata, notas de versão, evidências, limitações e
+   decisão de aceite. Distinguir fechamento local de integração, tag e
+   publicação formal, sujeitos às autorizações aplicáveis. Azure e
+   experimentos futuros não são pré-requisitos.
+
+**Estado:** planejada; execução e aceite pendentes.
 
 As falhas e recuperações funcionais são executadas na Etapa 9, conforme RF-006
 e RNF-003. A Etapa 10 revisa se as evidências correspondem à candidata. Esses
@@ -313,8 +323,8 @@ local, com evidências rastreáveis da validação funcional em Docker Compose.
 Integração e publicação formais não podem ser apresentadas como realizadas
 enquanto estiverem pendentes.
 
-**Estado:** planejada; revisão da candidata e preparação do aceite pendentes.
-Checks antigos ou atualização documental não atendem aos critérios.
+**Estado:** 10a documentada com bloqueadores; 10b e preparação do aceite
+pendentes. O relatório de auditoria não atende sozinho aos critérios finais.
 
 ### Execução portátil e comandos de validação
 

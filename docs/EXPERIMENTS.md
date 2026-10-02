@@ -234,10 +234,10 @@ uv run --locked python -m experiments.lab stop RUN_ID
 de restaurar PostgreSQL, RabbitMQ, Azurite, API e worker. Ele não reinicia a
 carga. Verifique `pending`, `exhausted`, integridade dos blobs e mensagens na
 fila antes de encerrar. Se houver evento esgotado, preserve a evidência e
-investigue a causa; o laboratório existente não possui comando de reenvio
-controlado. Esse comportamento funcional, exigido pelo RNF-003, será
-implementado na nova Etapa 9 e validado na Etapa 10, independentemente dos
-experimentos adiados.
+investigue a causa; o laboratório histórico não chama automaticamente o
+comando de reenvio controlado do serviço. Esse comando foi implementado na
+Etapa 9 e suas provas e lacunas estão em `docs/RELEASE_AUDIT.md`,
+independentemente dos experimentos adiados.
 
 Não há limpeza automática de volumes ou dados. Para examinar uma execução
 descartável **após arquivar suas evidências**, substitua `RUN_ID` pelo valor do

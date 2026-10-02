@@ -22,12 +22,12 @@ execução nem encerra a Etapa 9.
 
 ## Versões e estado do desenvolvimento
 
-A versão em desenvolvimento é a `v1.0.0`. As Etapas 1 a 8 permanecem
-registradas como concluídas e integradas; isso não comprova funcionamento da
-revisão atual. A Etapa 9 conclui a operação local, as provas funcionais
-integradas e a adequação do `ci-image`. A Etapa 10 revisa as evidências e
-prepara o aceite da candidata local. A conclusão depende dos critérios e
-validações registrados em [PLAN.md](docs/PLAN.md).
+A versão em desenvolvimento é a `v1.0.0`. A implementação da Etapa 9 foi
+mergeada e os três checks de CI passaram na revisão `7e48d5f`. A auditoria
+10a classificou as provas funcionais e registrou pendências obrigatórias em
+[RELEASE_AUDIT.md](docs/RELEASE_AUDIT.md). A 10b fechará essas pendências,
+validará a candidata final e preparará o aceite local. Os critérios de
+fechamento permanecem em [PLAN.md](docs/PLAN.md).
 
 A `v1.0.0` entregará o serviço completo, autônomo e validado em ambiente
 local/portátil com Docker Compose, PostgreSQL como banco próprio, Azurite para
@@ -76,10 +76,10 @@ Essas são evidências de implementação, não resultados de execução atual.
 
 O Compose principal inclui PostgreSQL, Azurite, RabbitMQ, preparação controlada,
 API e worker separados. A imagem executa como usuário não-root. A prova
-`packaged` valida HTTP real e esses serviços por meio da imagem construída;
-ela precisa passar para comprovar a operação. O pacote está em `0.1.0` e o
-OpenAPI declara `1.0.0`; o alinhamento pertence à revisão da candidata na
-Etapa 10.
+`packaged` executou com sucesso para a revisão auditada no GitHub Actions;
+o alcance e as pendências de cenários específicos estão no relatório 10a. O
+pacote está em `0.1.0` e o OpenAPI declara `1.0.0`; o alinhamento pertence à
+10b.
 
 Banco, RabbitMQ e armazenamento são dependências legítimas de infraestrutura;
 independência entre microsserviços não significa ausência dessas dependências.

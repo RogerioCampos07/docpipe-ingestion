@@ -106,9 +106,9 @@ em `docs/DESIGN.md`, seção 19, e os critérios do RNF-009 em
 - A entrega da `v1.0.0` deve executar em ambiente local/portátil com Docker
   Compose, PostgreSQL como banco exclusivo do Ingestion, Azurite para blobs
   privados e RabbitMQ para mensageria, com API e worker separados.
-- PostgreSQL será o único banco operacional suportado. O suporte já existe,
-  mas defaults SQLite/local e a composição principal ainda devem ser ajustados
-  na Etapa 9. Não apresente esse planejamento como implementação concluída.
+- PostgreSQL é o único banco operacional suportado. A Etapa 9 ajustou os
+  defaults e o Compose principal; seu merge e os checks de CI não substituem
+  a revisão dos critérios e das lacunas em `docs/RELEASE_AUDIT.md`.
 - SQLite pode permanecer somente como recurso interno das fixtures existentes,
   selecionado explicitamente, sem substituir os testes PostgreSQL. Preserve
   o adaptador local e seus testes sem criar outro percurso obrigatório de
@@ -136,8 +136,9 @@ em `docs/DESIGN.md`, seção 19, e os critérios do RNF-009 em
   A Etapa 9 conclui a operação local, suas provas funcionais integradas e a
   adaptação do `ci-image`. A Etapa 10 revisa as evidências, verifica a versão
   candidata e prepara o fechamento local da `v1.0.0`.
-- As Etapas 9 e 10 continuam pendentes. Inspeção estática, checks anteriores
-  e atualização documental não comprovam seu aceite operacional.
+- A implementação da Etapa 9 foi mergeada; a auditoria 10a registra critérios
+  comprovados e pendentes em `docs/RELEASE_AUDIT.md`. A 10b corrige pendências
+  aprovadas, valida a candidata final e prepara o fechamento local.
 - Kind e Kubernetes não fazem parte da `v1.0.0`. Não introduza AKS, Azure
   Container Registry nem qualquer recurso Azure nas Etapas 8 a 10.
 - Integrações e implantação em serviços Azure pertencem ao backlog da

@@ -91,24 +91,24 @@ abaixo descrevem o adaptador existente, sem criar outro percurso de release.
 
 ## 7. Persistência e transição para PostgreSQL
 
-O código atual ainda usa SQLite em `dataset/docpipe-ingestion.db` por padrão,
-com chaves estrangeiras, timeout de bloqueio e configuração de WAL. Esse modo
-simples foi a base das etapas iniciais. O suporte PostgreSQL já está presente
-no driver `psycopg[binary]`, no engine SQLAlchemy, nas migrations Alembic, no
-serviço Compose com volume e em `tests/integration/test_postgresql.py`.
-Essas evidências de implementação não são aprovação operacional atual.
+SQLite em `dataset/docpipe-ingestion.db` foi o modo padrão das etapas iniciais,
+com chaves estrangeiras, timeout de bloqueio e configuração de WAL. O modo
+operacional atual usa PostgreSQL e Azurite por padrão. O suporte PostgreSQL
+inclui `psycopg[binary]`, engine SQLAlchemy, migrations Alembic, serviço
+Compose com volume e `tests/integration/test_postgresql.py`.
+O alcance das provas operacionais está em `docs/RELEASE_AUDIT.md`.
 
-Os defaults operacionais da Etapa 9 passam a PostgreSQL e Azurite, sem fallback
-silencioso. SQLite pode permanecer apenas nas fixtures internas já existentes,
-selecionado explicitamente, sem substituir testes reais de transações,
-constraints, locks e migrations PostgreSQL. Não há necessidade identificada
-de novo driver nem de redesenhar tabelas.
+Os defaults operacionais da Etapa 9 passaram a PostgreSQL e Azurite, sem
+fallback silencioso. SQLite pode permanecer apenas nas fixtures internas
+existentes, selecionado explicitamente, sem substituir testes reais de
+transações, constraints, locks e migrations PostgreSQL. Não há necessidade
+identificada de novo driver nem de redesenhar tabelas.
 
-Reutilizar a cadeia Alembic existente até `20260918_03`; validar sua aplicação
-em banco vazio e correspondência com os modelos. Revisões novas somente se
-uma correção exigir mudança de schema. Aplicar migrations não transfere dados
-SQLite: não há transferência prevista e os arquivos e volumes existentes
-devem ser preservados.
+Reutiliza-se a cadeia Alembic existente até `20260918_03`; sua aplicação em
+PostgreSQL vazio foi exercitada no CI da revisão auditada. Revisões novas
+somente se uma correção exigir mudança de schema. Aplicar migrations não
+transfere dados SQLite: não há transferência prevista e os arquivos e
+volumes existentes devem ser preservados.
 
 ## 8. Modelo de dados inicial
 
