@@ -133,9 +133,9 @@ em `docs/DESIGN.md`, seção 19, e os critérios do RNF-009 em
   executável quando isso for aplicável à etapa.
 - Não antecipe recursos de etapas posteriores. As Etapas 1 a 8 estão
   registradas como concluídas; a Etapa 7 cobre a instrumentação e a 8, CI.
-  A Etapa 9 conclui a implementação funcional, seus testes e documentação;
-  a Etapa 10 valida o conjunto com dependências reais, corrige defeitos
-  encontrados e encerra a `v1.0.0`, sem etapa adicional de conclusão.
+  A Etapa 9 conclui a operação local, suas provas funcionais integradas e a
+  adaptação do `ci-image`. A Etapa 10 revisa as evidências, verifica a versão
+  candidata e prepara o fechamento local da `v1.0.0`.
 - As Etapas 9 e 10 continuam pendentes. Inspeção estática, checks anteriores
   e atualização documental não comprovam seu aceite operacional.
 - Kind e Kubernetes não fazem parte da `v1.0.0`. Não introduza AKS, Azure
@@ -255,8 +255,9 @@ Quando a instrumentação correspondente fizer parte da etapa solicitada:
   relógio real e ordem de execução. Use dublês nas fronteiras externas nesses
   testes.
 - Integrações devem usar recursos isolados e descartáveis. A validação
-  integrada da Etapa 10 exige PostgreSQL, Azurite e RabbitMQ reais no Compose,
-  API por HTTP e worker separado; não substitua essas integrações por mocks.
+  funcional integrada da Etapa 9 exige PostgreSQL, Azurite e RabbitMQ reais no
+  Compose, API por HTTP e worker separado; não substitua essas integrações por
+  mocks.
 - Cubra o caminho feliz, falhas esperadas e casos-limite relevantes.
 - Não reduza cobertura, enfraqueça asserções nem remova testes apenas para fazer
   a alteração passar.

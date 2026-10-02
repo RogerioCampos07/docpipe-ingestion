@@ -22,9 +22,11 @@ O DocPipe processa documentos corporativos por meio de microserviços independen
 - preservar adaptadores e contratos que permitam evoluir para serviços Azure
   na `v1.1.0` sem acoplar o domínio.
 
-O escopo aprovado será implementado na Etapa 9 e validado e encerrado na
-Etapa 10. Esta revisão é documental: não altera os defaults SQLite/local,
-o Compose ou a imagem atuais, nem comprova seu funcionamento operacional.
+O escopo aprovado coloca a operação local e as provas funcionais integradas
+na Etapa 9, incluindo a adaptação do `ci-image`. A Etapa 10 revisa as
+evidências e verifica a candidata local `v1.0.0`. Sua conclusão não depende
+de Azure, reservado à `v1.1.0`; os experimentos completos são um marco
+posterior à validação funcional Azure.
 
 ## 3. Fora do escopo
 
@@ -96,11 +98,11 @@ no driver `psycopg[binary]`, no engine SQLAlchemy, nas migrations Alembic, no
 serviço Compose com volume e em `tests/integration/test_postgresql.py`.
 Essas evidências de implementação não são aprovação operacional atual.
 
-Na Etapa 9, PostgreSQL passa a ser o único banco operacional suportado, sem
-fallback silencioso. SQLite pode permanecer apenas nas fixtures internas já
-existentes, selecionado explicitamente, sem substituir testes reais de
-transações, constraints, locks e migrations PostgreSQL. Não há necessidade
-identificada de novo driver nem de redesenhar tabelas.
+Os defaults operacionais da Etapa 9 passam a PostgreSQL e Azurite, sem fallback
+silencioso. SQLite pode permanecer apenas nas fixtures internas já existentes,
+selecionado explicitamente, sem substituir testes reais de transações,
+constraints, locks e migrations PostgreSQL. Não há necessidade identificada
+de novo driver nem de redesenhar tabelas.
 
 Reutilizar a cadeia Alembic existente até `20260918_03`; validar sua aplicação
 em banco vazio e correspondência com os modelos. Revisões novas somente se
@@ -192,19 +194,18 @@ O evento não deve conter o conteúdo do arquivo, URL pública nem credencial de
 - A escrita do blob e a transação PostgreSQL não formam uma única transação;
   arquivos órfãos devem ser detectáveis e reconciliáveis.
 
-O diagnóstico por correlação e o caso de uso de reconciliação já existem.
-Falta disponibilizar o reenvio controlado exigido pelo RNF-003 e documentar o
-acesso operacional à reconciliação. A Etapa 9 deve fornecer esse comando sem
-novo endpoint público, preservar identificadores e payload, impedir alteração
-de eventos já publicados e registrar a ação sem dados sensíveis. A
-reconciliação identifica órfãos e uploads incompletos sem exclusão automática.
+O diagnóstico por correlação e a reconciliação são somente leitura. O comando
+operacional de reenvio da Etapa 9 aceita evento não publicado esgotado,
+preserva IDs e payload, usa atualização condicional para rejeitar concorrência
+com publicação e registra a ação sem conteúdo do evento. A reconciliação
+identifica órfãos e uploads incompletos sem exclusão automática.
 
-O worker atual não reconecta sozinho após perder o canal RabbitMQ. O percurso
-mínimo aprovado documenta restauração do broker e reinício explícito do worker;
-eventos esgotados também exigem reenvio controlado. Reconexão automática não é
-requisito adicional, e uma política de restart não resolve sozinha um processo
-vivo com canal fechado. A Etapa 10 deve comprovar esses procedimentos
-funcionais, sem campanhas experimentais de falhas.
+O worker observa o canal RabbitMQ no próprio thread que o utiliza. Quando o
+canal fecha, ele deixa de reportar readiness, registra a falha e encerra com
+estado não zero, preservando eventos não publicados na outbox. Após restaurar
+RabbitMQ, o operador reinicia explicitamente o worker; eventos esgotados também
+exigem reenvio. Reconexão automática não é requisito. A prova funcional local
+deve validar essa recuperação, sem campanhas experimentais de falhas.
 
 ## 12. Segurança e privacidade
 
@@ -269,10 +270,10 @@ pendentes. Essa perda não altera documentos, eventos ou confirmação do broker
 
 ## 14. Execução local da `v1.0.0`
 
-Os itens abaixo são critérios da entrega final. O Compose principal atual
-contém apenas as dependências; API e worker estão no Compose experimental.
-A imagem ainda executa como root. Essas lacunas pertencem à Etapa 9, e sua
-comprovação integrada pertence à Etapa 10.
+Os itens abaixo definem a operação local da `v1.0.0`. O Compose principal
+contém as dependências, um serviço de setup para migrations e preparação de
+blobs, API e worker separados. A prova integrada da Etapa 9 deve confirmar
+esses comportamentos contra a imagem construída e as dependências reais.
 
 - Imagem Docker executada por usuário não root.
 - Configuração via variáveis de ambiente, validada na inicialização.
@@ -336,7 +337,7 @@ uma eventual adoção do Azure Service Bus exige decisão e etapa próprias.
 | Broker atrás de adaptador | Preserva portabilidade; RabbitMQ continua confirmado na `v1.0.0` |
 | Azurite na Etapa 6 | Valida localmente o adaptador de objetos compatível com Azure Blob sem exigir conta Azure |
 | GitHub Actions na Etapa 8 | Valida mudanças continuamente sem implicar deploy contínuo |
-| Docker Compose nas Etapas 9 e 10 | Consolida o serviço completo e permite validação integrada e fechamento local |
+| Docker Compose na Etapa 9 e revisão na Etapa 10 | Consolida e comprova a operação local; a etapa seguinte revisa evidências da candidata |
 | Experimentos adiados | Planejamento somente após validação funcional Azure com Blob Storage e PostgreSQL; histórico preservado |
 | Azure na `v1.1.0` | Separa a validação local da implantação e integração com serviços gerenciados |
 | Azure Service Bus não decidido | Mantém sua possível adoção como avaliação futura |
@@ -345,9 +346,10 @@ uma eventual adoção do Azure Service Bus exige decisão e etapa próprias.
 ## 17. Persistência compartilhada local
 
 A Etapa 6 implementou composição explícita dos adaptadores, preservando
-SQLite e filesystem no modo simples à época. O percurso de entrega aprovado
-usa PostgreSQL, Azurite e RabbitMQ; a alteração dos defaults e a consolidação
-do Compose permanecem pendentes na Etapa 9. Os contratos públicos permanecem.
+SQLite e filesystem no modo simples à época. O percurso operacional aprovado
+usa PostgreSQL, Azurite e RabbitMQ, com defaults e Compose principal alinhados
+na Etapa 9. SQLite e filesystem permanecem em testes auxiliares; os contratos
+públicos permanecem.
 
 No PostgreSQL, cada worker seleciona um evento elegível com
 `FOR UPDATE SKIP LOCKED`, mantendo o lock durante a publicação confirmada. O

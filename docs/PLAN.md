@@ -2,20 +2,22 @@
 
 O plano é incremental. Cada etapa deve terminar com resultado verificável e
 documentação atualizada. As Etapas 1 a 8 permanecem registradas como concluídas;
-esse histórico não comprova o funcionamento da revisão atual. A Etapa 9 passa
-a concluir a implementação funcional e a Etapa 10 valida o conjunto e encerra
-a `v1.0.0`, sem uma etapa adicional de conclusão.
+esse histórico não comprova o funcionamento da revisão atual. A Etapa 9
+conclui a operação local, suas provas funcionais integradas e a adequação do
+`ci-image`. A Etapa 10 revisa as evidências, verifica a versão candidata e
+prepara o aceite local da `v1.0.0`.
 
 A entrega será local/portátil com Docker Compose, PostgreSQL como banco
 exclusivo do Ingestion, Azurite para blobs privados e RabbitMQ para mensageria.
 API e worker serão processos separados e não dependerão de Processing ou de
-outros microsserviços. Azure pertence à `v1.1.0`. O planejamento de carga e
-resiliência ocorrerá somente após a validação funcional no ambiente Azure com
-Blob Storage e PostgreSQL.
+outros microsserviços. Azure pertence à `v1.1.0`. O aceite funcional local e
+o planejamento experimental após validação funcional Azure são marcos
+distintos; os experimentos não bloqueiam o fechamento local da `v1.0.0`.
 
-Este replanejamento altera somente documentos. Não implementa tarefas nem
-conclui as Etapas 9 e 10. Scripts, workflows e evidências do laboratório da
-antiga Etapa 9 permanecem preservados em seu contexto histórico, descrito em
+O replanejamento realocou as provas integradas e a adaptação de CI para a
+Etapa 9. A Etapa 10 fica dedicada à revisão das evidências e à preparação da
+candidata local. Scripts, workflows e evidências do laboratório da antiga
+Etapa 9 permanecem preservados em seu contexto histórico, descrito em
 `docs/EXPERIMENTS.md`.
 
 ## Diretriz obrigatória em todas as etapas
@@ -81,7 +83,7 @@ automaticamente.
 
 Esse registro descreve a entrega da Etapa 6. A decisão posterior para a
 `v1.0.0` é adotar PostgreSQL como único banco operacional na Etapa 9, com
-aceite integrado na Etapa 10; não exige refazer os adaptadores existentes.
+provas integradas nesta etapa; não exige refazer os adaptadores existentes.
 
 ## Etapa 7 — Instrumentação do serviço
 
@@ -161,10 +163,11 @@ existentes chegam a `20260918_03`. Isso comprova implementação disponível,
 não aprovação operacional atual. Não há motivo identificado para recriar esse
 suporte nem para adicionar outro driver.
 
-`Settings` e `.env.example` ainda usam SQLite e storage local por padrão. O
-Compose principal contém somente as três dependências; API e worker estão
-no Compose experimental. A imagem ainda executa como root. O diagnóstico
-existente é somente leitura e falta o reenvio controlado exigido pelo RNF-003.
+O estado funcional precisa ser comprovado por execução. As alterações da
+Etapa 9 devem configurar PostgreSQL e Azurite explicitamente, incluir API,
+worker e preparação controlada no Compose principal, usar imagem não-root,
+fornecer reenvio e preservar a reconciliação somente leitura. A presença das
+alterações no código não substitui as validações abaixo.
 
 ### Tarefas em ordem de dependência
 
@@ -201,20 +204,35 @@ existente é somente leitura e falta o reenvio controlado exigido pelo RNF-003.
    Documentar a restauração das dependências e o reinício explícito do worker
    quando perder o canal RabbitMQ; reconexão automática não é requisito novo.
    Reiniciar o worker não substitui o reenvio de eventos esgotados.
-5. **9.5 — Entregar testes e documentação correspondentes.** Cada tarefa
-   anterior inclui testes das alterações. Fortalecer o caso de confirmação
-   seguida de falha no commit, preservando a entrega pelo menos uma vez.
-   Preparar validação funcional da aplicação empacotada independente do
-   laboratório experimental. Atualizar instalação, configuração, operação,
-   contratos e procedimentos de falha. Não adicionar deduplicação por checksum
-   nem `Idempotency-Key`: uploads repetidos podem gerar documentos distintos,
-   e republicações da outbox conservam o mesmo `event_id`.
+5. **9.5 — Completar as provas funcionais integradas.** Em projeto Compose
+   isolado, usar a imagem construída, HTTP real e PostgreSQL, Azurite e
+   RabbitMQ reais. Conferir PDF, PNG e JPEG, conteúdo privado e SHA-256,
+   metadados, outbox, envelope e propriedades da mensagem, estado `PUBLISHED`,
+   duplicatas permitidas, falha parcial, reenvio, retomada, reconciliação e
+   persistência após reiniciar/recriar containers com volumes preservados.
+   Não montar o checkout na API, no worker ou nos comandos operacionais da
+   imagem. Os cenários de falha são funcionais e não campanhas experimentais.
+6. **9.6 — Adaptar o check `ci-image`.** Preservar os checks
+   `ci-quality`, `ci-tests` e `ci-image`, seus nomes, limites e proteções.
+   Exercitar a imagem construída no Compose oficial com configuração explícita,
+   migrations, preparação do Azurite, API, worker e HTTP. O harness pode usar
+   bibliotecas do checkout para verificar os serviços, mas todos os processos
+   da aplicação devem vir da imagem, sem mounts do checkout. Reutilizar o
+   verificador JUnit para rejeitar relatórios ausentes/vazios, erros, falhas,
+   skips e módulos obrigatórios ausentes; coletar diagnósticos e limpar somente
+   recursos descartáveis do próprio projeto.
+7. **9.7 — Alinhar a documentação.** Atualizar comandos reais de configuração,
+   inicialização, validação, diagnóstico e encerramento. Registrar garantias e
+   limites da arquitetura, autonomia do Ingestion, v1.0.0 local, Azure na
+   v1.1.0 e marco experimental posterior. Não adicionar deduplicação por
+   checksum nem `Idempotency-Key`: uploads repetidos podem gerar documentos
+   distintos e republicações conservam o mesmo `event_id`.
 
 **Arquivos previstos:** `docker-compose.yml`, `Dockerfile`, `.env.example`,
-settings, composição, persistência, diagnóstico e casos de uso pertinentes;
-testes correspondentes e documentação existente. `migrations/`,
-`pyproject.toml` e `uv.lock` só mudam quando houver necessidade concreta.
-Essas alterações de implementação ainda não foram executadas.
+settings, composição, persistência, worker, comandos operacionais, testes,
+`.github/workflows/ci.yml`, documentação existente e este `AGENTS.md`.
+`migrations/`, `pyproject.toml` e `uv.lock` só mudam quando houver necessidade
+concreta.
 
 ### Critérios de aceite da Etapa 9
 
@@ -222,6 +240,11 @@ Essas alterações de implementação ainda não foram executadas.
 - PostgreSQL é o único banco operacional, com migrations reproduzíveis em
   banco vazio e nenhuma transferência de dados presumida;
 - aplicação executa sem root e preserva dados nos volumes apropriados;
+- prova funcional integrada usa HTTP contra a imagem construída, com as três
+  dependências reais, e confere blob privado, metadados, outbox, publicação,
+  falhas, retomada, reenvio, reconciliação e persistência;
+- `ci-image` exercita a imagem entregue sem substituir seus arquivos por
+  mounts do checkout e mantém as proteções JUnit e os três checks existentes;
 - testes pertinentes de cada mudança e checks de qualidade passam, sem
   reduzir cobertura ou substituir validação PostgreSQL por SQLite;
 - reenvio controlado, diagnóstico de órfãos e reinício do worker possuem
@@ -229,95 +252,69 @@ Essas alterações de implementação ainda não foram executadas.
 - contratos HTTP e de evento, transação documento/outbox, publisher confirms,
   privacidade e entrega pelo menos uma vez permanecem preservados;
 - instruções de execução e validação estão coerentes com a implementação e
-  prontas para a comprovação integrada da Etapa 10.
+  reproduzem o ambiente local de ponta a ponta;
+- a Etapa 10 revisa evidências rastreáveis da candidata, sem exigir Azure ou
+  novos experimentos para o aceite local da `v1.0.0`.
 
 **Fora do escopo:** recursos funcionais adicionais, Azure, Kubernetes,
 observabilidade central e ensaios experimentais de carga ou resiliência.
 
-**Estado:** replanejada; implementação e aceite pendentes. Reaproveitar os
-componentes corretos existentes. A atualização documental não conclui a etapa.
+**Estado:** implementação em andamento; aceite pendente até todas as
+validações integradas e os checks exigidos passarem. Reaproveitar os
+componentes corretos existentes; código e documentação sem execução não
+concluem a etapa.
 
-## Etapa 10 — Validação integrada e fechamento da `v1.0.0`
+## Etapa 10 — Revisão da candidata local `v1.0.0`
 
-**Objetivo:** comprovar o serviço completo em ambiente local/portátil e
-encerrar a `v1.0.0` nesta etapa, com requisitos atendidos, evidências
-rastreáveis e documentação reproduzível.
+**Objetivo:** revisar as evidências funcionais da Etapa 9, verificar a versão
+candidata e concluir sua preparação e aceite local como `v1.0.0`, com
+requisitos atendidos, resultados rastreáveis e documentação reproduzível.
 
 ### Tarefas em ordem de dependência
 
-1. **10.1 — Reproduzir uma instalação limpa.** Após o aceite da Etapa 9,
-   seguir somente as instruções do repositório em projeto Compose isolado.
-   Registrar revisão, versões, configuração não sensível e ambiente. Construir
-   a imagem, iniciar dependências, aplicar migrations em PostgreSQL vazio,
-   preparar blobs e iniciar API e worker. Confirmar usuário não root e saúde.
-2. **10.2 — Conferir o fluxo completo.** Usar HTTP real contra a API
-   empacotada e worker em processo separado, com PostgreSQL, Azurite e RabbitMQ
-   reais, sem mocks dessas integrações. Para PDF, PNG e JPEG sintéticos,
-   conferir `202`, consulta por UUID, conteúdo e SHA-256 do blob privado,
-   metadados, outbox, envelope e propriedades AMQP da mensagem e estado
-   `PUBLISHED`. Verificar correlação e ausência de dados sensíveis. Demonstrar
-   publicação sem Processing e sem consumidores de negócio; a leitura da fila
-   pela verificação ocorre depois e não é processamento posterior.
-3. **10.3 — Verificar erros, duplicidade e persistência.** Executar os casos
-   funcionais de `REQUIREMENTS.md`, seção 4: rejeições sem sucesso parcial,
-   indisponibilidade de banco/storage com erro controlado, broker indisponível
-   com outbox preservada, retomada de pendentes e reenvio controlado de
-   esgotados. Conferir órfãos sem apagá-los em falha incerta. Validar uploads
-   repetidos e republicação segundo os contratos. Reiniciar API, worker e
-   dependências e recriar containers preservando volumes, comprovando
-   permanência de metadados, blobs, mensagens duráveis e eventos pendentes.
-4. **10.4 — Validar a configuração adotada na CI.** Preservar `ci-quality`,
-   `ci-tests` e `ci-image`. Ampliar a validação da imagem para API e worker com
-   PostgreSQL, Azurite e RabbitMQ, mantendo qualidade, tipos, cobertura e
-   integrações reais. Atualizar as exigências JUnit para impedir sucesso com
-   testes obrigatórios ausentes ou ignorados. Preservar verificações dos
-   scripts e variantes experimentais; não executar benchmarks no fluxo de PR.
-5. **10.5 — Corrigir defeitos e consolidar evidências.** Corrigir problemas
-   encontrados na execução futura desta etapa, adicionar regressões e repetir
-   verificações afetadas. Executar os checks pertinentes existentes. Vincular
-   RFs e RNFs obrigatórios aos resultados da revisão candidata e aos jobs do
-   GitHub. Revisar segurança, privacidade, contratos, instalação, configuração,
-   operação e limitações nos documentos existentes. Preservar relatórios
-   sanitizados e referências duráveis às evidências, sem documentos recebidos,
-   segredos ou dumps de dados no Git.
-6. **10.6 — Fechar a versão.** Alinhar a versão do pacote, lockfile,
-   metadados e documentação, preservando `/v1` e `document.received.v1`.
-   Registrar revisão candidata, notas de release, evidências, limitações e a
-   decisão de aceite. Conferir os critérios abaixo antes de declarar o
-   fechamento técnico da `v1.0.0`; não transferir sua conclusão para outra
-   etapa. Quando expressamente autorizados, integrar a revisão aprovada e
-   criar a tag `v1.0.0` e a release vinculadas à revisão validada. Commit,
-   push, PR, merge, tag e publicação exigem autorizações próprias; o plano
-   não as concede. Registrar separadamente se esses atos formais estão
-   pendentes, sem afirmar que a release foi publicada. Após os ajustes finais,
-   confirmar que os checks e as evidências correspondem à revisão de fechamento.
+1. **10.1 — Revisar evidências da Etapa 9.** Conferir revisão, versões,
+   configuração não sensível, ambiente, comandos e resultados. Rastrear cada
+   RF/RNF obrigatório aos testes, relatórios e diagnósticos sanitizados;
+   investigar lacunas antes de aceitar a candidata.
+2. **10.2 — Verificar a versão candidata.** Alinhar versão do pacote,
+   lockfile, metadados e documentação, preservando `/v1` e
+   `document.received.v1`. Reexecutar as verificações necessárias para
+   confirmar que os resultados pertencem ao estado candidato e verificar os
+   três checks no GitHub Actions quando a revisão passar pelo fluxo manual.
+3. **10.3 — Corrigir defeitos da candidata e fechar evidências.** Corrigir
+   problemas comprovados com regressões e repetir as verificações afetadas.
+   Revisar segurança, privacidade, contratos, instalação, configuração,
+   operação e limitações. Preservar relatórios sanitizados e referências
+   duráveis antes de expirarem artefatos; não versionar documentos, segredos
+   ou dumps.
+4. **10.4 — Registrar a preparação local da `v1.0.0`.** Registrar revisão
+   candidata, notas de versão, evidências, limitações e decisão de aceite.
+   Distinguir o fechamento local de integração/publicação formal, que seguem
+   as autorizações e o fluxo manual aplicáveis. Azure e experimentos futuros
+   não são pré-requisitos desse aceite.
 
-As falhas e recuperações de 10.3 verificam contratos, integridade e retomada
-previstos no RF-006 e RNF-003. Não são campanhas experimentais de injeção de
-falhas, testes de carga nem avaliações de desempenho. Permanecem obrigatórias
-mesmo com o adiamento dos experimentos.
+As falhas e recuperações funcionais são executadas na Etapa 9, conforme RF-006
+e RNF-003. A Etapa 10 revisa se as evidências correspondem à candidata. Esses
+testes não são campanhas experimentais de injeção de falhas, carga ou
+desempenho.
 
 ### Critérios de aceite e fechamento
 
-- instruções reproduzem instalação e inicialização a partir de banco vazio;
-- API e worker empacotados funcionam com os três componentes reais do Compose,
-  sem outro microsserviço, checkout ou consumidor de negócio;
-- armazenamento privado, persistência transacional e publicação são
-  conferidos conjuntamente, conforme os contratos;
-- erros, duplicidade permitida, reenvio controlado e persistência após
-  reinícios têm evidências, sem promessa de entrega exatamente uma vez;
-- RFs e RNFs obrigatórios possuem testes e resultados rastreáveis;
+- evidências da Etapa 9 correspondem ao estado candidato e são reproduzíveis;
+- RFs e RNFs obrigatórios estão rastreados a resultados reais;
 - checks pertinentes passam, inclusive no GitHub para a revisão candidata;
 - documentação, versão, segurança e limitações estão revisadas, sem segredos;
+- o aceite local da `v1.0.0` não depende de Azure nem de experimentos
+  acadêmicos posteriores;
 - não há requisito obrigatório pendente nem validação essencial omitida.
 
-**Saída verificável:** `v1.0.0` tecnicamente concluída, autônoma, funcional e
-validada em Docker Compose, com PostgreSQL próprio, Azurite e RabbitMQ. O
-fechamento e seus atos formais ficam registrados nesta etapa; publicação
-pendente de autorização não pode ser apresentada como realizada.
+**Saída verificável:** candidata `v1.0.0` revisada e preparada para aceite
+local, com evidências rastreáveis da validação funcional em Docker Compose.
+Integração e publicação formais não podem ser apresentadas como realizadas
+enquanto estiverem pendentes.
 
-**Estado:** planejada; validação integrada e fechamento pendentes. Checks
-antigos ou atualização documental não atendem aos critérios de aceite.
+**Estado:** planejada; revisão da candidata e preparação do aceite pendentes.
+Checks antigos ou atualização documental não atendem aos critérios.
 
 ### Execução portátil e comandos de validação
 
@@ -326,19 +323,18 @@ sem gerador de carga ou stack central. Conferir a memória realmente disponível
 ao host e ao Docker. Uma VM pode hospedar o mesmo Compose se necessário; isso
 não constitui integração com produtos Azure nem autoriza criar infraestrutura.
 
-Os comandos existentes estão em `docs/CI.md`: instalação com
+Os comandos existentes estão em `README.md` e `docs/CI.md`: instalação com
 `uv sync --locked --group dev`, tarefas `lint`, `format-check`, `typecheck`,
 `test`, `typos`, testes de integração opt-in, validação Compose e build.
-Migrations usam `alembic upgrade head`; blobs usam
-`python -m docpipe_ingestion.init_blob_storage`; diagnóstico usa
-`python -m docpipe_ingestion.diagnostics CORRELATION_UUID`.
+Migrations e preparo de blobs usam o serviço Compose `setup`; comandos de
+reenvio e reconciliação também executam nessa imagem. Diagnóstico por
+correlação usa `python -m docpipe_ingestion.diagnostics CORRELATION_UUID`.
 
-Na implementação, confirmar os comandos Compose de inicialização completa,
-migrations, parada e reinício com volumes preservados. Criar ou completar o
-comando de reenvio, o acesso operacional à reconciliação e a sequência de
-validação funcional integrada. Não apresentar esses comandos futuros como
-disponíveis hoje. Alguns testes atuais limpam tabelas e filas: executá-los
-somente contra recursos descartáveis, separados das evidências preservadas.
+Os comandos Compose de inicialização, migrations, parada e reinício com
+volumes preservados, junto ao reenvio e à reconciliação, pertencem à Etapa 9 e
+devem ser documentados e testados antes do aceite. Alguns testes limpam tabelas
+e filas: executá-los somente contra recursos descartáveis, separados das
+evidências preservadas.
 
 ## Autonomia e composição futura do DocPipe
 

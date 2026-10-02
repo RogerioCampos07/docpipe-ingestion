@@ -24,9 +24,10 @@ execução nem encerra a Etapa 9.
 
 A versão em desenvolvimento é a `v1.0.0`. As Etapas 1 a 8 permanecem
 registradas como concluídas e integradas; isso não comprova funcionamento da
-revisão atual. A Etapa 9 foi replanejada para concluir a implementação
-funcional e a Etapa 10 para validar o conjunto e encerrar a versão. Ambas
-continuam pendentes; esta atualização documental não as implementa.
+revisão atual. A Etapa 9 conclui a operação local, as provas funcionais
+integradas e a adequação do `ci-image`. A Etapa 10 revisa as evidências e
+prepara o aceite da candidata local. A conclusão depende dos critérios e
+validações registrados em [PLAN.md](docs/PLAN.md).
 
 A `v1.0.0` entregará o serviço completo, autônomo e validado em ambiente
 local/portátil com Docker Compose, PostgreSQL como banco próprio, Azurite para
@@ -63,23 +64,22 @@ workflows e evidências históricos permanecem preservados.
 
 ## Implementação atual e configuração de entrega
 
-O código e `.env.example` ainda usam SQLite em `dataset/docpipe-ingestion.db`
-e arquivos privados em `dataset/documents/` por padrão. A Etapa 9 deverá
-substituir esse modo operacional por PostgreSQL e Azurite, sem fallback
-silencioso. SQLite poderá permanecer somente nas fixtures internas existentes;
-isso não representa suporte a dois bancos na entrega final.
+O modo operacional agora usa PostgreSQL e Azurite por padrão, sem fallback
+silencioso para SQLite ou armazenamento local. SQLite e o adaptador local
+permanecem explícitos nas fixtures e testes auxiliares, sem representar suporte
+a dois bancos operacionais.
 
 PostgreSQL já possui driver `psycopg[binary]`, engine SQLAlchemy, migrations
 Alembic, testes em `tests/integration/test_postgresql.py` e serviço com volume
 em `docker-compose.yml`. Azurite e RabbitMQ também possuem adaptadores e testes.
 Essas são evidências de implementação, não resultados de execução atual.
 
-O Compose principal contém somente as três dependências; API e worker estão
-no Compose experimental. Consolidá-los no percurso principal e executar a
-imagem sem root são tarefas pendentes. A validação integrada atual usa
-`TestClient` e chama o publicador diretamente; ainda é necessário comprovar
-API por HTTP e worker separados na imagem. O pacote está em `0.1.0` e o
-OpenAPI declara `1.0.0`; o alinhamento ocorrerá no fechamento da Etapa 10.
+O Compose principal inclui PostgreSQL, Azurite, RabbitMQ, preparação controlada,
+API e worker separados. A imagem executa como usuário não-root. A prova
+`packaged` valida HTTP real e esses serviços por meio da imagem construída;
+ela precisa passar para comprovar a operação. O pacote está em `0.1.0` e o
+OpenAPI declara `1.0.0`; o alinhamento pertence à revisão da candidata na
+Etapa 10.
 
 Banco, RabbitMQ e armazenamento são dependências legítimas de infraestrutura;
 independência entre microsserviços não significa ausência dessas dependências.
@@ -96,68 +96,65 @@ Compatibilidade de API não significa equivalência completa: a `v1.0.0` não é
 implantada nem validada no Azure Blob Storage real ou em qualquer outro
 serviço Azure.
 
-## Preparação com a implementação atual
+## Execução local com Docker Compose
 
-Os comandos abaixo continuam descrevendo a implementação disponível: as
-dependências executam no Compose, e API/worker no host com Python 3.14 e `uv`.
-O percurso integralmente conteinerizado será documentado e comprovado nas
-Etapas 9 e 10; não depende da execução de experimentos.
+O Compose oficial executa toda a aplicação sem Processing nem outros
+microsserviços. A configuração `.env.example` usa credenciais locais de
+desenvolvimento, não destinadas a ambientes compartilhados ou de produção.
+Copie o exemplo e inicie a infraestrutura:
 
 ```bash
-uv sync --locked
+uv sync --locked --group dev
 cp .env.example .env
 ```
 
-O `.env` é local e não deve ser versionado. O exemplo ainda contém os defaults
-SQLite/local; ajuste as variáveis abaixo para usar a infraestrutura aprovada.
-
-## PostgreSQL, Azurite e RabbitMQ disponíveis
-
-Configure no `.env`:
-
-```dotenv
-DOCPIPE_INGESTION_DATABASE_BACKEND=postgresql
-DOCPIPE_INGESTION_DATABASE_URL=postgresql+psycopg://docpipe:docpipe-local@127.0.0.1:5432/docpipe_ingestion
-DOCPIPE_INGESTION_STORAGE_BACKEND=azurite
-DOCPIPE_INGESTION_BLOB_CONNECTION_STRING=DefaultEndpointsProtocol=http;AccountName=docpipe;AccountKey=ZG9jcGlwZS1sb2NhbC1vbmx5LW5vdC1zZWNyZXQ=;BlobEndpoint=http://127.0.0.1:10000/docpipe;
-```
-
-Inicie e confirme as dependências:
+O `.env` é local e não deve ser versionado. As variáveis de portas e contas
+locais estão descritas no `.env.example`. Suba PostgreSQL, Azurite e RabbitMQ,
+aguardando seus health checks:
 
 ```bash
 docker compose pull postgres rabbitmq azurite
-docker compose up -d --wait postgres rabbitmq azurite
+docker compose up -d --wait postgres azurite
+docker compose up -d --wait rabbitmq
 docker compose ps
 ```
 
-Inicialize o schema e o container privado:
+Execute migrations e prepare o container privado de blobs pelo serviço de
+setup, que usa a mesma imagem da API e do worker:
 
 ```bash
-uv run alembic upgrade head
-uv run python -m docpipe_ingestion.init_blob_storage
+docker compose --profile setup run --build --rm setup
 ```
 
 O PostgreSQL pode começar vazio. Aplicar migrations cria/evolui o schema;
 não existe transferência automática de dados SQLite nem necessidade presumida
 de realizá-la. Preserve arquivos e volumes existentes.
 
-Execute API e worker em terminais separados:
+Construa e inicie API e worker em containers separados:
 
 ```bash
-uv run uvicorn docpipe_ingestion.api.app:app --host 127.0.0.1 --port 8000
-uv run python -m docpipe_ingestion.outbox_worker
+docker compose up -d --build --wait
+docker compose ps
+curl --fail http://127.0.0.1:8000/health/ready
+curl --fail http://127.0.0.1:9001/health/ready
 ```
 
-Dentro de outro container da rede Compose, use `postgres:5432`,
-`rabbitmq:5672` e `http://azurite:10000/docpipe` nas configurações. Para uma
-aplicação executada diretamente no SBX, use as portas publicadas em
-`127.0.0.1`.
+Migrations devem ser executadas pelo serviço `setup`, não concorrentemente por
+cada réplica. API e worker executam como UID `10001`; seus dados duráveis ficam
+nos volumes de PostgreSQL, Azurite e RabbitMQ. Os diretórios e endpoints
+publicados escutam em loopback por padrão. As URLs internas dos serviços são
+`postgres:5432`, `rabbitmq:5672` e `http://azurite:10000/docpipe`.
 
 Ao terminar, preserve os volumes:
 
 ```bash
-docker compose stop postgres rabbitmq azurite
+docker compose stop
 ```
+
+Para reiniciar os containers mantendo os dados, use `docker compose start`.
+Para recriá-los preservando os volumes, execute `docker compose down --remove-orphans`
+e repita os passos de setup e inicialização acima. Não use `down --volumes` no
+ambiente de desenvolvimento: essa opção apaga os dados persistidos.
 
 ## API
 
@@ -170,8 +167,9 @@ docker compose stop postgres rabbitmq azurite
 | `GET` | `/metrics` | métricas da API em formato compatível com Prometheus |
 
 As respostas e eventos nunca incluem binário, caminho físico, URL pública,
-connection string ou credencial. O RabbitMQ e os exporters não participam da
-readiness da API porque a outbox preserva eventos aceitos.
+connection string ou credencial. O RabbitMQ não participa da readiness da API
+porque a outbox preserva eventos aceitos. A readiness do worker exige conexão
+com PostgreSQL e canal RabbitMQ utilizável para publicar.
 
 ## Instrumentação e telemetria
 
@@ -199,16 +197,37 @@ O utilitário é somente leitura e não imprime payload, nome de arquivo,
 checksum ou chave de storage. Consulte `docs/OBSERVABILITY.md` para consultas,
 catálogos e limitações.
 
-O reenvio controlado de eventos não publicados, inclusive esgotados, ainda
-será implementado na Etapa 9. O worker atual pode exigir reinício explícito
-após perder o canal RabbitMQ; reinício não reativa eventos esgotados. A
-reconciliação existente identifica órfãos e uploads incompletos sem exclusão
-automática; seu acesso operacional também deve ser documentado nessa etapa.
+O reenvio controlado de eventos esgotados preserva IDs e payload, e rejeita
+eventos publicados ou não esgotados. Execute-o pela imagem de aplicação:
+
+```bash
+docker compose --profile setup run --rm --no-deps setup \
+  python -m docpipe_ingestion.requeue_event EVENT_UUID
+```
+
+O comando de reconciliação é somente leitura e não apaga objetos:
+
+```bash
+docker compose --profile setup run --rm --no-deps setup \
+  python -m docpipe_ingestion.reconcile_storage
+```
+
+Uploads incompletos só são listados após a idade configurada em
+`DOCPIPE_INGESTION_INCOMPLETE_FILE_AGE_SECONDS` (uma hora por padrão). A
+reconciliação identifica marcadores e blobs órfãos sem removê-los.
+
+Se o worker perder o canal RabbitMQ, ele registra o erro e encerra sem marcar
+eventos pendentes como publicados. Restaure o broker e inicie novamente o
+worker; eventos esgotados ainda exigem reenvio controlado.
+
+```bash
+docker compose up -d rabbitmq
+docker compose start worker
+```
 
 Este repositório mantém a instrumentação, sem hospedar uma stack central.
-O Compose principal atual contém somente PostgreSQL, RabbitMQ e Azurite;
-API e worker serão incluídos na Etapa 9. Logs são emitidos
-em stderr, métricas são consultadas nos endpoints locais e traces podem ser
+O Compose principal contém PostgreSQL, RabbitMQ, Azurite, API e worker. Logs
+são emitidos em stderr, métricas são consultadas nos endpoints locais e traces podem ser
 exportados para um endpoint OTLP HTTP externo. A exportação fica desabilitada
 com `DOCPIPE_INGESTION_TRACES_ENABLED=false` e
 `DOCPIPE_INGESTION_TRACES_EXPORTER=none`.
@@ -253,24 +272,26 @@ variáveis para o processo pytest.
 Os testes usam somente dados sintéticos. Consulte `docs/DESIGN.md` para as
 garantias e limitações da outbox e do armazenamento.
 
-A Etapa 10 exigirá conferência conjunta de blob, metadados, outbox e mensagem
-com os componentes reais do Compose, além de contratos, erros, uploads
-repetidos, republicação, reenvio e persistência após reinícios. Essas
-verificações funcionais não são ensaios experimentais de resiliência. Para o
-notebook de 8 GB, o percurso usa uma API, um worker e verificações sequenciais;
-uma VM pode hospedar o mesmo Compose sem caracterizar integração Azure.
+A Etapa 9 comprova por HTTP o blob, metadados, outbox, mensagem, falhas,
+reenvio, reconciliação e persistência com os componentes reais do Compose.
+Essas verificações funcionais não são ensaios experimentais de resiliência.
+Para o notebook de 8 GB, o percurso usa uma API, um worker e verificações
+sequenciais; uma VM pode hospedar o mesmo Compose sem caracterizar integração
+Azure. A Etapa 10 revisa essas evidências para a candidata `v1.0.0`.
 
 ## Integração contínua
 
 O workflow de CI valida pull requests destinadas à `main`, pushes na `main` e
 execuções manuais. Os checks estáveis são `ci-quality`, `ci-tests` e
 `ci-image`: eles cobrem qualidade, testes sem serviços, integrações reais com
-PostgreSQL, RabbitMQ e Azurite, construção da imagem e um smoke test da API
-empacotada. A imagem não é publicada e nenhum deploy é realizado.
+PostgreSQL, RabbitMQ e Azurite, construção da imagem e prova funcional da
+aplicação empacotada no Compose oficial. A imagem não é publicada e nenhum
+deploy é realizado.
 
-O smoke atual da imagem usa SQLite e não valida o worker. Na Etapa 10 ele
-deverá cobrir a configuração PostgreSQL/Azurite/RabbitMQ com API e worker,
-preservando os checks, cobertura e exigência de integrações executadas.
+O teste `packaged` usa o checkout somente como harness de verificação. API,
+worker e comandos operacionais são executados a partir da imagem construída,
+sem mounts do checkout. O relatório JUnit exige o teste integrado e rejeita
+ausência, vazio, falhas, erros ou skips.
 
 Consulte `docs/CI.md` para os comandos equivalentes, isolamento dos serviços,
 diagnóstico, checks obrigatórios da branch e limitações das

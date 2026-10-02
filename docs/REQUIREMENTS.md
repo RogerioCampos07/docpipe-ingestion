@@ -1,11 +1,11 @@
 # Requisitos do DocPipe Ingestion
 
 Este documento define o escopo de entrega aprovado. A `v1.0.0` será concluída
-ao final da Etapa 10 com Docker Compose, PostgreSQL próprio, Azurite e
-RabbitMQ. O replanejamento é documental: os defaults SQLite/local ainda
-existem no código, e a consolidação e a validação integrada permanecem
-pendentes nas Etapas 9 e 10. Implementação existente não equivale a validação
-operacional atual.
+localmente após a operação e as provas funcionais integradas da Etapa 9 e a
+revisão da candidata na Etapa 10. O Compose usa PostgreSQL próprio, Azurite e
+RabbitMQ, com API e worker separados. Inspeção de código, por si só, não
+equivale a validação operacional; somente resultados executados comprovam os
+critérios.
 
 ## 1. Requisitos funcionais
 
@@ -197,10 +197,11 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 - A proteção da `main` poderá exigir checks documentados após sua definição.
 - CI não implica CD. A `v1.0.0` não inclui deploy contínuo nem publicação
   automática de imagens.
-- Na Etapa 10, a imagem deve ser validada com API e worker e as três
+- Na Etapa 9, `ci-image` valida a imagem com API e worker separados e as três
   dependências reais. Preservar os checks `ci-quality`, `ci-tests` e
-  `ci-image`, cobertura e rejeição de testes obrigatórios ausentes ou
-  ignorados. O adiamento experimental não reduz validações funcionais.
+  `ci-image`, cobertura e rejeição de relatórios ausentes/vazios, erros,
+  falhas, skips e testes obrigatórios ausentes. O adiamento experimental não
+  reduz validações funcionais.
 
 ### RNF-009 — Autonomia entre microsserviços
 
@@ -293,9 +294,9 @@ experimentais de resiliência nem campanhas de injeção de falhas.
 
 ## 5. Definição de pronto da `v1.0.0`
 
-A Etapa 9 conclui a implementação funcional, seus testes e documentação. A
-Etapa 10 comprova e encerra a `v1.0.0`, sem etapa adicional de conclusão.
-O fechamento exige:
+A Etapa 9 conclui a operação local, suas provas funcionais integradas e a
+documentação. A Etapa 10 revisa as evidências da candidata e prepara o aceite
+local da `v1.0.0`. O conjunto de critérios exige:
 
 - instalação reproduzível pelas instruções do repositório, migrations em
   PostgreSQL vazio e inicialização completa em Docker Compose;
@@ -309,15 +310,18 @@ O fechamento exige:
   candidata, incluindo checks pertinentes aprovados no GitHub;
 - imagem sem root, dependências verificadas, ausência de segredos reais e
   revisão de segurança, privacidade e instrumentação;
+- `ci-image` comprova por HTTP a imagem construída, sem mounts do checkout,
+  junto ao worker separado e aos serviços reais do Compose;
 - documentação de instalação, configuração, execução e contratos revisada,
   versão coerente, limitações e decisão de aceite registradas.
 
 Nenhum requisito obrigatório pendente ou validação essencial não executada
-pode ser tratado como simples limitação para declarar a versão concluída.
-Tag e publicação são atos formais posteriores, vinculados à revisão validada
-e sujeitos a autorização específica, assim como commit, push, PR e merge.
-O fechamento técnico e o estado desses atos devem ser registrados na Etapa 10;
-não afirmar publicação enquanto ela estiver pendente.
+pode ser tratado como simples limitação para aceitar a versão. A validação
+local da `v1.0.0` não depende de conta, infraestrutura ou validação Azure;
+Azure pertence à `v1.1.0`. Tag e publicação são atos formais posteriores,
+vinculados à revisão validada e sujeitos a autorização específica, assim como
+commit, push, PR e merge. Seu estado deve ser registrado separadamente; não
+afirmar publicação enquanto estiver pendente.
 
 Carga e resiliência experimentais não bloqueiam esse fechamento. As evidências
 históricas permanecem preservadas, sem substituir a comprovação funcional.
