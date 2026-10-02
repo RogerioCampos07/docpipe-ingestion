@@ -29,8 +29,16 @@ def pytest_configure(config: pytest.Config) -> None:
             'DOCPIPE_PACKAGED_IMAGE_INTEGRATION',
         )
     )
+    packaged_integration = (
+        os.environ.get('DOCPIPE_PACKAGED_IMAGE_INTEGRATION') == '1'
+    )
     for name in tuple(os.environ):
         if name.startswith('DOCPIPE_INGESTION_TEST_'):
+            continue
+        if (
+            packaged_integration
+            and name == 'DOCPIPE_INGESTION_INCOMPLETE_FILE_AGE_SECONDS'
+        ):
             continue
         if broker_integration and name == 'DOCPIPE_INGESTION_RABBITMQ_URL':
             continue

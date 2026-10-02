@@ -486,8 +486,12 @@ def _verify_expected_messages(
     expected = {
         str(event.id): (document, event) for document, event in records
     }
-    remaining = len(set(expected) | retain)
-    seen: set[str] = set()
+    expected_ids = set(expected)
+    # basic_get cannot retrieve messages already unacked on this channel.
+    already_unacked = stack.unacked_message_ids.copy()
+    assert already_unacked <= retain
+    remaining = len((expected_ids | retain) - already_unacked)
+    seen = expected_ids & already_unacked
     for _ in range(remaining):
         method, properties, body = stack.channel.basic_get(
             queue='docpipe.document.received.v1',
@@ -514,7 +518,7 @@ def _verify_expected_messages(
         if event_id not in retain:
             stack.channel.basic_ack(method.delivery_tag)
     assert seen == set(expected)
-    stack.unacked_message_ids = retain.copy()
+    stack.unacked_message_ids = already_unacked | retain
 
 
 def _record_for_document(
