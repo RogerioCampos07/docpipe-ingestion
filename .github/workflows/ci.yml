@@ -106,7 +106,7 @@ jobs:
       - name: Run tests without external services
         run: |
           uv run --locked pytest \
-            -m "not (postgresql or rabbitmq or azurite or stack)" \
+            -m "not (postgresql or rabbitmq or azurite or stack or packaged)" \
             --cov=docpipe_ingestion --cov-report= \
             --junitxml="$CI_REPORTS/unit.xml" -ra
 
@@ -141,11 +141,16 @@ jobs:
           timeout 5m docker compose --env-file /dev/null
           -f docker-compose.yml pull postgres rabbitmq azurite
 
-      - name: Start isolated integration services
+      - name: Start PostgreSQL and Azurite
         run: >-
           timeout 3m docker compose --env-file /dev/null
           -f docker-compose.yml up -d --wait --wait-timeout 120
-          postgres rabbitmq azurite
+          postgres azurite
+
+      - name: Start RabbitMQ
+        run: >-
+          timeout 3m docker compose --env-file /dev/null
+          -f docker-compose.yml up -d --wait --wait-timeout 150 rabbitmq
 
       - name: Configure integration tests
         run: |
@@ -220,65 +225,119 @@ jobs:
   image:
     name: ci-image
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       CI_IMAGE: docpipe-ingestion:ci-${{ github.run_id }}-${{ github.run_attempt }}
-      CI_CONTAINER: docpipe-ingestion-ci-${{ github.run_id }}-${{ github.run_attempt }}
-      CI_VOLUME: docpipe-ingestion-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      DOCPIPE_INGESTION_IMAGE: docpipe-ingestion:ci-${{ github.run_id }}-${{ github.run_attempt }}
+      CI_COMPOSE_PROJECT: docpipe-ci-image-${{ github.run_id }}-${{ github.run_attempt }}
+      CI_API_URL: http://127.0.0.1:18000
+      API_PORT: 18000
+      WORKER_METRICS_PORT: 19001
+      POSTGRES_PORT: 25432
+      RABBITMQ_PORT: 25672
+      RABBITMQ_MANAGEMENT_PORT: 25673
+      AZURITE_BLOB_PORT: 20000
+      DOCPIPE_PACKAGED_IMAGE_INTEGRATION: '1'
+      DOCPIPE_INGESTION_INCOMPLETE_FILE_AGE_SECONDS: '1'
+      DOCPIPE_INGESTION_TEST_POSTGRESQL_URL: postgresql+psycopg://docpipe:docpipe-local@127.0.0.1:25432/docpipe_ingestion
+      DOCPIPE_INGESTION_TEST_AZURITE_CONNECTION_STRING: DefaultEndpointsProtocol=http;AccountName=docpipe;AccountKey=ZG9jcGlwZS1sb2NhbC1vbmx5LW5vdC1zZWNyZXQ=;BlobEndpoint=http://127.0.0.1:20000/docpipe;
+      DOCPIPE_INGESTION_RABBITMQ_URL: amqp://docpipe:docpipe@127.0.0.1:25672/docpipe
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          prune-cache: true
+          save-cache: false
+          cache-suffix: uv-${{ env.UV_VERSION }}
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+            .python-version
+
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev
+
+      - name: Prepare image test report directory
+        run: |
+          echo "CI_REPORTS=$RUNNER_TEMP/ci-image-reports" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/ci-image-reports"
+
       - name: Build the application image
         run: docker build --pull --tag "$CI_IMAGE" .
 
-      - name: Prepare the smoke test database
-        run: |
-          docker volume create "$CI_VOLUME"
-          docker run --rm --volume "$CI_VOLUME:/app/dataset" \
-            "$CI_IMAGE" sh -c \
-            'mkdir -p dataset/documents && alembic upgrade head'
+      - name: Validate the official Compose configuration
+        run: >-
+          docker compose --project-name "$CI_COMPOSE_PROJECT"
+          --env-file /dev/null -f docker-compose.yml config --quiet
 
-      - name: Start the application image
-        run: |
-          docker run --detach --name "$CI_CONTAINER" \
-            --publish 127.0.0.1:18000:8000 \
-            --volume "$CI_VOLUME:/app/dataset" \
-            --env DOCPIPE_INGESTION_TRACES_ENABLED=false \
-            --env DOCPIPE_INGESTION_TRACES_EXPORTER=none \
-            "$CI_IMAGE"
+      - name: Pull isolated integration dependencies
+        run: >-
+          timeout 5m docker compose --project-name "$CI_COMPOSE_PROJECT"
+          --env-file /dev/null -f docker-compose.yml
+          pull postgres rabbitmq azurite
 
-      - name: Smoke test the packaged application
-        shell: bash
+      - name: Start PostgreSQL and Azurite
+        run: >-
+          timeout 3m docker compose --project-name "$CI_COMPOSE_PROJECT"
+          --env-file /dev/null -f docker-compose.yml up -d --no-build
+          --wait --wait-timeout 120 postgres azurite
+
+      - name: Start RabbitMQ
+        run: >-
+          timeout 3m docker compose --project-name "$CI_COMPOSE_PROJECT"
+          --env-file /dev/null -f docker-compose.yml up -d --no-build
+          --wait --wait-timeout 150 rabbitmq
+
+      - name: Apply migrations and prepare private blob storage
         run: |
-          for attempt in {1..30}; do
-            if curl --fail --silent --show-error --max-time 5 \
-              http://127.0.0.1:18000/health/live > /dev/null; then
-              break
-            fi
-            if [ "$attempt" -eq 30 ]; then
-              echo 'application did not become live within 60 seconds' >&2
-              exit 1
-            fi
-            sleep 2
-          done
-          curl --fail --silent --show-error --max-time 5 \
-            http://127.0.0.1:18000/health/ready > /dev/null
-          curl --fail --silent --show-error --max-time 5 \
-            http://127.0.0.1:18000/metrics > /dev/null
+          docker compose --project-name "$CI_COMPOSE_PROJECT" \
+            --env-file /dev/null -f docker-compose.yml \
+            --profile setup run --rm setup \
+            2>&1 | tee "$CI_REPORTS/setup.log"
+
+      - name: Start the packaged API
+        run: >-
+          timeout 3m docker compose --project-name "$CI_COMPOSE_PROJECT"
+          --env-file /dev/null -f docker-compose.yml up -d --no-build
+          --wait --wait-timeout 120 api
+
+      - name: Verify the built image through real HTTP and services
+        run: |
+          uv run --locked pytest \
+            -m packaged \
+            --junitxml="$CI_REPORTS/packaged-compose.xml" -ra -vv
+
+      - name: Verify the packaged integration report
+        if: always()
+        run: >-
+          uv run --locked python .github/scripts/verify_pytest_junit.py
+          "$CI_REPORTS/packaged-compose.xml"
+          --require-module tests.integration.test_packaged_compose=1
 
       - name: Collect image diagnostics
         if: failure()
         run: |
           CI_REPORTS="$RUNNER_TEMP/ci-image-reports"
           mkdir -p "$CI_REPORTS"
-          docker ps --all --filter "name=^/${CI_CONTAINER}$" \
-            --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' \
+          docker compose --project-name "$CI_COMPOSE_PROJECT" \
+            --env-file /dev/null -f docker-compose.yml ps --all \
             > "$CI_REPORTS/container-state.txt"
-          docker logs --tail 200 "$CI_CONTAINER" \
-            > "$CI_REPORTS/application.log" 2>&1 || true
+          docker compose --project-name "$CI_COMPOSE_PROJECT" \
+            --env-file /dev/null -f docker-compose.yml logs \
+            --no-color --tail 200 postgres rabbitmq azurite api worker \
+            > "$CI_REPORTS/compose-services.log" 2>&1 || true
 
       - name: Upload image diagnostics
         if: failure()
@@ -293,6 +352,7 @@ jobs:
       - name: Remove smoke test resources
         if: always()
         run: |
-          docker rm --force "$CI_CONTAINER" > /dev/null 2>&1 || true
-          docker volume rm "$CI_VOLUME" > /dev/null 2>&1 || true
+          docker compose --project-name "$CI_COMPOSE_PROJECT" \
+            --env-file /dev/null -f docker-compose.yml \
+            down --volumes --remove-orphans
           docker image rm "$CI_IMAGE" > /dev/null 2>&1 || true

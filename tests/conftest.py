@@ -26,10 +26,19 @@ def pytest_configure(config: pytest.Config) -> None:
         for name in (
             'DOCPIPE_RABBITMQ_INTEGRATION',
             'DOCPIPE_STACK_INTEGRATION',
+            'DOCPIPE_PACKAGED_IMAGE_INTEGRATION',
         )
+    )
+    packaged_integration = (
+        os.environ.get('DOCPIPE_PACKAGED_IMAGE_INTEGRATION') == '1'
     )
     for name in tuple(os.environ):
         if name.startswith('DOCPIPE_INGESTION_TEST_'):
+            continue
+        if (
+            packaged_integration
+            and name == 'DOCPIPE_INGESTION_INCOMPLETE_FILE_AGE_SECONDS'
+        ):
             continue
         if broker_integration and name == 'DOCPIPE_INGESTION_RABBITMQ_URL':
             continue
@@ -51,6 +60,7 @@ def database_engine(tmp_path: Path) -> Iterator[Engine]:
     engine = create_database_engine(
         Settings(
             environment='test',
+            database_backend='sqlite',
             database_url=f'sqlite:///{tmp_path / "test.db"}',
             sqlite_wal_enabled=True,
         )

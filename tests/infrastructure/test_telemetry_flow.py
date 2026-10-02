@@ -90,7 +90,10 @@ def flow(
     otlp = Mock(return_value=api_exporter)
     monkeypatch.setattr(tracing, 'OTLPSpanExporter', otlp)
     settings = Settings(
+        environment='test',
+        database_backend='sqlite',
         database_url=str(database_engine.url),
+        storage_backend='local',
         storage_root=tmp_path / 'documents',
         traces_enabled=enabled,
         traces_exporter='otlp' if enabled else 'none',
@@ -106,7 +109,8 @@ def flow(
     )
     worker_exporter = _exporter(request.param)
     worker_provider = tracing.create_tracer_provider(
-        Settings(), exporter=worker_exporter
+        Settings(environment='test', storage_backend='local'),
+        exporter=worker_exporter,
     )
     broker = RabbitMQPublisher(
         url='amqp://unused',

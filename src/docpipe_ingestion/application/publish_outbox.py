@@ -11,6 +11,7 @@ from uuid import UUID
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.trace import SpanKind
 
+from docpipe_ingestion.application.errors import BrokerPublishError
 from docpipe_ingestion.application.events import DocumentReceivedV1
 from docpipe_ingestion.application.ports import BrokerPublisher, UnitOfWork
 from docpipe_ingestion.domain.models import OutboxEvent
@@ -54,11 +55,23 @@ class OutboxPublisher:
         self._sleep = sleeper
         self._metrics = metrics
         self._tracer_provider = tracer_provider
+        self._broker_ready = Event()
+
+    @property
+    def broker_ready(self) -> bool:
+        """Return the last broker health observed by the publisher thread."""
+        return self._broker_ready.is_set()
 
     def process_batch(self) -> int:
         """Publish at most one configured batch and return successes."""
         published = 0
         for _ in range(self._settings.batch_size):
+            if not self._broker.is_ready():
+                self._broker_ready.clear()
+                raise BrokerPublishError(
+                    'RabbitMQ channel is unavailable; worker must be restarted'
+                )
+            self._broker_ready.set()
             with self._unit_of_work_factory() as unit_of_work:
                 now = self._clock()
                 events = unit_of_work.outbox_events.list_pending(
@@ -121,6 +134,12 @@ class OutboxPublisher:
                         self._metrics.publication_duration.labels(
                             'failure'
                         ).observe(perf_counter() - attempt_started)
+                    if not self._broker.is_ready():
+                        self._broker_ready.clear()
+                        raise BrokerPublishError(
+                            'RabbitMQ channel closed; event remains in the '
+                            'outbox for retry after worker restart'
+                        ) from error
                     self._sleep(delay)
                     break
                 unit_of_work.outbox_events.mark_published(

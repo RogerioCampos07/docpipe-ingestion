@@ -59,6 +59,10 @@ class OutboxEventRepository(Protocol):
         next_attempt_at: datetime | None = None,
     ) -> None: ...
 
+    def requeue_exhausted(self, event_id: UUID, *, max_attempts: int) -> bool:
+        """Atomically make one exhausted, unpublished event eligible again."""
+        ...
+
     def mark_published(
         self,
         event_id: UUID,
@@ -70,6 +74,8 @@ class BrokerPublisher(Protocol):
     """Confirmed publication independent of a concrete broker."""
 
     def publish(self, event: OutboxEvent) -> None: ...
+
+    def is_ready(self) -> bool: ...
 
     def close(self) -> None: ...
 

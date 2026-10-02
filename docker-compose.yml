@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: [CMD-SHELL, 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
       interval: 5s
       timeout: 5s
       retries: 12
@@ -33,11 +33,11 @@ services:
     volumes:
       - rabbitmq-mnesia-data:/var/lib/rabbitmq/mnesia
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: [CMD, rabbitmq-diagnostics, -q, check_port_connectivity]
       interval: 5s
-      timeout: 5s
+      timeout: 30s
       retries: 12
-      start_period: 10s
+      start_period: 60s
     mem_limit: 512m
 
   azurite:
@@ -67,6 +67,80 @@ services:
       retries: 12
       start_period: 10s
     mem_limit: 384m
+
+  setup:
+    image: ${DOCPIPE_INGESTION_IMAGE:-docpipe-ingestion:local}
+    build: .
+    profiles: [setup]
+    restart: 'no'
+    environment: &ingestion-environment
+      DOCPIPE_INGESTION_ENVIRONMENT: local
+      DOCPIPE_INGESTION_DATABASE_BACKEND: postgresql
+      DOCPIPE_INGESTION_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-docpipe}:${POSTGRES_PASSWORD:-docpipe-local}@postgres:5432/${POSTGRES_DB:-docpipe_ingestion}
+      DOCPIPE_INGESTION_STORAGE_BACKEND: azurite
+      DOCPIPE_INGESTION_INCOMPLETE_FILE_AGE_SECONDS: ${DOCPIPE_INGESTION_INCOMPLETE_FILE_AGE_SECONDS:-3600}
+      DOCPIPE_INGESTION_BLOB_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=${AZURITE_ACCOUNT_NAME:-docpipe};AccountKey=${AZURITE_ACCOUNT_KEY:-ZG9jcGlwZS1sb2NhbC1vbmx5LW5vdC1zZWNyZXQ=};BlobEndpoint=http://azurite:10000/${AZURITE_ACCOUNT_NAME:-docpipe};"
+      DOCPIPE_INGESTION_RABBITMQ_URL: amqp://${RABBITMQ_USER:-docpipe}:${RABBITMQ_PASSWORD:-docpipe}@rabbitmq:5672/${RABBITMQ_VHOST:-docpipe}
+      DOCPIPE_INGESTION_TRACES_ENABLED: 'false'
+      DOCPIPE_INGESTION_TRACES_EXPORTER: none
+    command: [sh, -c, 'alembic upgrade head && python -m docpipe_ingestion.init_blob_storage']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
+
+  api:
+    image: ${DOCPIPE_INGESTION_IMAGE:-docpipe-ingestion:local}
+    build: .
+    init: true
+    restart: unless-stopped
+    environment: *ingestion-environment
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health/ready', timeout=4).read()"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  worker:
+    image: ${DOCPIPE_INGESTION_IMAGE:-docpipe-ingestion:local}
+    build: .
+    init: true
+    restart: 'no'
+    stop_grace_period: 30s
+    environment:
+      <<: *ingestion-environment
+      DOCPIPE_INGESTION_WORKER_METRICS_HOST: 0.0.0.0
+    ports:
+      - "${WORKER_BIND_ADDRESS:-127.0.0.1}:${WORKER_METRICS_PORT:-9001}:9001"
+    command: [python, -m, docpipe_ingestion.outbox_worker]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:9001/health/ready', timeout=4).read()"
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   postgres-data:

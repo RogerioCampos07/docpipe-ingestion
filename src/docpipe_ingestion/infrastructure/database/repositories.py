@@ -152,6 +152,22 @@ class SqlAlchemyOutboxEventRepository:
             )
         )
 
+    def requeue_exhausted(
+        self,
+        event_id: UUID,
+        *,
+        max_attempts: int,
+    ) -> bool:
+        result = self._session.execute(
+            update(OutboxEventModel)
+            .where(OutboxEventModel.id == event_id)
+            .where(OutboxEventModel.published_at.is_(None))
+            .where(OutboxEventModel.attempts >= max_attempts)
+            .values(attempts=0, next_attempt_at=None)
+            .returning(OutboxEventModel.id)
+        )
+        return result.scalar_one_or_none() is not None
+
     def mark_published(self, event_id: UUID, published_at: datetime) -> None:
         event = self._session.get(OutboxEventModel, event_id)
         if event is None or event.published_at is not None:

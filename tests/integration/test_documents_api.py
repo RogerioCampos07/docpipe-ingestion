@@ -42,7 +42,9 @@ def _settings(
         command.upgrade(_migration_config(database_path), 'head')
     return Settings(
         environment='test',
+        database_backend='sqlite',
         database_url=f'sqlite:///{database_path}',
+        storage_backend='local',
         storage_root=tmp_path / 'documents',
         max_file_size_bytes=max_size_bytes,
         storage_chunk_size_bytes=8,

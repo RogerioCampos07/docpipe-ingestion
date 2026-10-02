@@ -46,3 +46,11 @@ class DocumentNotFoundError(IngestionError):
 
 class BrokerPublishError(IngestionError):
     """Raised when the broker has not confirmed a publication."""
+
+
+class OutboxEventNotFoundError(IngestionError):
+    """Raised when an operator refers to an unknown outbox event."""
+
+
+class OutboxEventNotRequeueableError(IngestionError):
+    """Raised when an outbox event is not exhausted and unpublished."""

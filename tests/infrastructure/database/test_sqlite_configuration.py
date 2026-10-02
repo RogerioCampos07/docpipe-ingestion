@@ -20,6 +20,7 @@ def test_sqlite_enables_foreign_keys_timeout_and_wal(
     engine = create_database_engine(
         Settings(
             environment='test',
+            database_backend='sqlite',
             database_url=f'sqlite:///{tmp_path / "configured.db"}',
             sqlite_timeout_seconds=1.25,
             sqlite_wal_enabled=True,
@@ -49,6 +50,7 @@ def test_memory_database_does_not_require_wal() -> None:
     engine: Engine = create_database_engine(
         Settings(
             environment='test',
+            database_backend='sqlite',
             database_url='sqlite:///:memory:',
             sqlite_wal_enabled=True,
         )
@@ -69,6 +71,7 @@ def test_sqlite_can_disable_wal(tmp_path: Path) -> None:
     engine = create_database_engine(
         Settings(
             environment='test',
+            database_backend='sqlite',
             database_url=f'sqlite:///{tmp_path / "without-wal.db"}',
             sqlite_wal_enabled=False,
         )
