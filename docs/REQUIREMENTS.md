@@ -2,10 +2,11 @@
 
 Este documento define o escopo de entrega aprovado. A `v1.0.0` será concluída
 localmente após a operação e as provas funcionais integradas da Etapa 9 e a
-revisão da candidata na Etapa 10. O Compose usa PostgreSQL próprio, Azurite e
-RabbitMQ, com API e worker separados. Inspeção de código, por si só, não
-equivale a validação operacional; somente resultados executados comprovam os
-critérios.
+revisão da candidata na Etapa 10. A 10a audita requisitos e evidências; a 10b
+fecha as pendências e valida a candidata final. O Compose usa PostgreSQL
+próprio, Azurite e RabbitMQ, com API e worker separados. Inspeção de código,
+por si só, não equivale a validação operacional; somente resultados executados
+comprovam os critérios.
 
 ## 1. Requisitos funcionais
 
@@ -294,9 +295,10 @@ experimentais de resiliência nem campanhas de injeção de falhas.
 
 ## 5. Definição de pronto da `v1.0.0`
 
-A Etapa 9 conclui a operação local, suas provas funcionais integradas e a
-documentação. A Etapa 10 revisa as evidências da candidata e prepara o aceite
-local da `v1.0.0`. O conjunto de critérios exige:
+A Etapa 9 implementa a operação local, suas provas funcionais integradas e a
+documentação. A 10a audita as evidências da candidata em
+`docs/RELEASE_AUDIT.md`; a 10b corrige as pendências aprovadas e prepara o
+aceite local da `v1.0.0`. O conjunto de critérios exige:
 
 - instalação reproduzível pelas instruções do repositório, migrations em
   PostgreSQL vazio e inicialização completa em Docker Compose;

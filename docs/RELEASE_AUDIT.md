@@ -1,0 +1,196 @@
+# Auditoria 10a da candidata local `v1.0.0`
+
+## Escopo, revisão e decisão
+
+- Revisão auditada: `7e48d5fc2b1b01a4cec5246f71ab615f01b85f76`
+  (merge da [PR #16](https://github.com/RogerioCampos07/docpipe-ingestion/pull/16)).
+- Branch de trabalho: `chore/phase-10a-release-audit`; árvore limpa no início
+  da auditoria. `HEAD` e a referência local `origin/main` coincidiam. Não foi
+  feito `fetch`, checkout, build, teste, migration ou início de containers.
+- Ambiente observado: Python `3.14.4`, uv `0.9.26`, Docker `29.7.2`, Compose
+  `v5.5.0`; 3,3 GiB de RAM visíveis, 2,7 GiB disponíveis, sem swap; 4,2 GiB
+  livres no filesystem de 76 GiB. A memória observada é menor que os 8 GiB
+  nominais do notebook. Nenhuma stack foi criada nesta auditoria.
+- Critérios: `docs/REQUIREMENTS.md` (RF-001–008, RNF-001–009, CTs e definição
+  de pronto), `docs/DESIGN.md`, `docs/PLAN.md`, `README.md`, `docs/CI.md`,
+  `docs/OBSERVABILITY.md`, `docs/EXPERIMENTS.md` e `AGENTS.md`.
+- **Conclusão da 10a:** auditoria registrada, com pendências para a 10b.
+  **Candidata:** ainda bloqueada para aceite da `v1.0.0` pelos itens B1–B6.
+  A classificação não equivale a publicar ou fechar a release.
+
+A entrega avaliada é local: Compose oficial, PostgreSQL exclusivo do Ingestion,
+Azurite, RabbitMQ, API e worker separados. O Ingestion não requer Processing.
+Azure pertence à `v1.1.0`; Kubernetes, observabilidade central e experimentos
+acadêmicos não são critérios desta candidata. O `202` confirma blob e commit
+de metadados/outbox; `PUBLISHED` confirma o broker, não um consumidor. Blob,
+banco e broker não formam transação distribuída. A entrega é pelo menos uma vez.
+
+## Origem e alcance das evidências
+
+| ID | Origem e revisão | Resultado verificável | Limite |
+| --- | --- | --- | --- |
+| G | [Actions push `36954608701`](https://github.com/RogerioCampos07/docpipe-ingestion/actions/runs/36954608701), SHA auditado | `ci-quality`, `ci-tests` e `ci-image` concluídos com `success`. Os passos de migrations/setup, teste HTTP `packaged`, verificadores JUnit e cobertura tiveram `success`. | O artefato de `ci-tests` foi listado, mas seu download retornou HTTP 403; `ci-image` publica artefato apenas se falhar. Contagens e percentual exatos desse run não foram obtidos. |
+| P | [Actions PR `36954329033`](https://github.com/RogerioCampos07/docpipe-ingestion/actions/runs/36954329033), `9dcdeab38c57dc371b5e5aaca20efa5b6942729a` | Os mesmos três jobs concluíram com `success`. | Revisão da PR, distinta do SHA do merge. |
+| U | JUnit local da Parte 1, associado pelo histórico a `72a9d4e41695e195434649060a4babc9678892f9` | 176 testes sem serviços; zero falhas, erros e skips; sete excluídos pela seleção. | XML em `/tmp/docpipe-etapa9-part1-20261002/unit.xml` não contém SHA. |
+| I | JUnit local da Parte 1, mesma revisão histórica | Seis integrações reais; zero falhas, erros e skips; 177 excluídos. | XML em `/tmp/docpipe-etapa9-part1-20261002/integration.xml` não contém SHA. |
+| K | JUnit local da Parte 2, imagem construída do código `72a9d4e` e harness posteriormente corrigido em `9dcdeab` | Última tentativa: um `packaged` aprovado, zero falhas, erros e skips; 182 excluídos. As duas tentativas anteriores falharam no harness e foram preservadas. | XML em `/tmp/docpipe-etapa9-part2-20261002/retry2/packaged-compose.xml` não contém SHA. |
+| C | Inspeção estática da árvore auditada | Implementação, testes e configuração listados abaixo. | Existência de código ou teste não substitui execução. |
+
+O build local K registrou a imagem
+`sha256:2ab002166e2978f10e2a18deb86ed81afdd2cc9e196fb0bd8e5b1297bf563de0`.
+`git diff --quiet 9dcdeab..7e48d5f` confirmou árvores idênticas. Entre
+`72a9d4e` e a árvore auditada mudaram somente `tests/conftest.py` e
+`tests/integration/test_packaged_compose.py`: a fixture preserva a idade de
+uploads incompletos quando o teste `packaged` está habilitado, e o harness
+acompanha mensagens já recebidas mas não confirmadas. Assim, U/I sustentam o
+código da aplicação atual e K sustenta o harness atual, com a ressalva de que
+os XML locais não registram o commit. G comprova execução posterior da árvore
+do merge pelo GitHub e é a evidência principal da revisão auditada.
+
+O workflow `ci-tests` acumula cobertura de linhas e branches entre testes sem
+serviços e integrações reais; `packaged` é separado. O relatório local U+I
+registrou **88%**, sem piso percentual configurado em `pyproject.toml` ou no
+workflow. Esse número não é atribuído ao run G, cujo percentual não foi
+recuperado. O verificador JUnit rejeita relatório ausente/vazio, erro, falha,
+skip e módulos obrigatórios ausentes. G comprova que seus passos passaram;
+não foi executado novamente nesta 10a.
+
+Nesta auditoria, a API pública do GitHub confirmou jobs e passos do run G;
+`gh auth status` encontrou token inválido, e as consultas públicas a branch
+protection/arquivo de artefato retornaram 401/403. A revisão de links locais
+dos documentos não encontrou alvo ausente. `uv run --locked --no-sync typos`
+e `git diff --check` passaram. `typos` exclui Markdown pela configuração
+existente, portanto a redação foi revista separadamente. Não foram executados
+pytest, build, migrations ou novos containers na 10a.
+
+## Matriz de conformidade
+
+`Comprovado` exige implementação e resultado pertinente para esta árvore.
+`Parcial` indica subcritério ou cenário sem prova suficiente. `Não comprovado`
+indica ausência de resultado necessário, sem concluir que a implementação
+falha. `Não aplicável` exige exclusão documental explícita. As referências
+G/U/I/K/C acima indicam a revisão de cada resultado; os caminhos abaixo
+identificam implementação e teste, não um teste novo da 10a. Os caminhos
+abreviados de código e teste são relativos a `src/docpipe_ingestion/` e
+`tests/`; `migrations/` e arquivos de configuração ficam na raiz.
+
+| Critério | Implementação | Teste/evidência e revisão | Estado, fundamento e próximo passo |
+| --- | --- | --- | --- |
+| RF-001 — entrada e `202` | `api/routes/documents.py`, `api/schemas/documents.py`, `application/ingest_document.py` | `tests/api/test_documents.py` U/G; `test_packaged_compose.py` K/G | **Comprovado:** três formatos, UUID e resposta após persistência. |
+| RF-002 — validação | `application/file_validation.py`, `api/exception_handlers.py` | `test_file_validation.py`, `test_documents.py` U/G; rejeições K/G | **Parcial:** validação do arquivo é testada, mas não há limite explícito para o corpo multipart antes do parse; B1. |
+| RF-003 — storage privado | `infrastructure/storage/azure_blob.py`, `storage/local.py`, `storage/keys.py` | `test_azurite.py`, `test_storage.py` I/G; conteúdo e privacidade K/G; falha local U/G | **Parcial:** caminho feliz real; falha de escrita do Azurite não foi comprovada como tal; B2. |
+| RF-004 — metadados e migrations | `database/models.py`, `unit_of_work.py`, `migrations/versions/` | `test_postgresql.py` I/G; setup e DB K/G | **Comprovado:** schema em PostgreSQL, campos e rollback conjunto verificados. Reversão PostgreSQL não foi provada, mas não há nova migration nesta revisão. |
+| RF-005 — SHA-256 | `file_validation.py`, `azure_blob.py` | `test_file_validation.py` U/G; blob, metadados e evento K/G | **Comprovado:** hashing em chunks e igualdade com bytes armazenados. |
+| RF-006 — evento/outbox | `application/events.py`, `publish_outbox.py`, `messaging/rabbitmq.py` | `test_events.py`, `test_publish_outbox.py` U/G; `test_rabbitmq.py` I/G; K/G | **Comprovado:** transação documento/outbox, confirm, mensagem persistente, `mandatory`, retry/backoff e publicação pelo worker. O cenário especial de commit incerto está em CT-016. |
+| RF-007 — consulta | `api/routes/documents.py`, `get_document.py` | `test_documents.py` U/G; GET K/G | **Comprovado:** `200`/`404` e projeção sem binário, URL ou credencial. |
+| RF-008 — saúde/métricas | `api/routes/health.py`, `infrastructure/health.py`, `worker_server.py` | `test_health.py`, `test_worker_observability.py` U/G; saúde K/G | **Comprovado:** liveness, readiness funcional, métricas sem backend obrigatório e resposta sanitizada; indisponibilidade real de DB/Azurite segue CT-013. |
+| RNF-001 — streaming/recursos | `file_validation.py`, `azure_blob.py`, API multipart | leitura limitada U/G; fluxo K/G | **Parcial:** streaming do caso de uso é comprovado; parse do corpo antecede o limite do arquivo e pode consumir disco temporário; B1. Campanhas de desempenho são não aplicáveis. |
+| RNF-002 — separação/coordenação | Compose, `application/ports.py`, repositório SQL | `test_postgresql.py` I/G; API/worker K/G | **Comprovado:** processos separados e `SKIP LOCKED`; não exige comparação de réplicas. |
+| RNF-003 — confiabilidade | `publish_outbox.py`, `requeue_outbox_event.py`, `reconciliation.py` | U/I/K/G | **Parcial:** falha do broker, esgotamento, reenvio, retomada e órfão têm prova; CT-013, CT-015 e CT-016 ainda limitam o conjunto; B2–B4. |
+| RNF-004 — segurança/LGPD | settings, Compose, Dockerfile, handlers, logging | revisão estática C; testes de privacidade U/G; usuário da imagem K/G | **Parcial:** nenhuma credencial real apareceu na busca dirigida; B1 e B5 impedem fechar a revisão de recursos/dependências. TLS de produção e política para dados pessoais reais são condições de uso fora da operação local sintética. |
+| RNF-005 — observabilidade | `api/correlation.py`, `infrastructure/observability/`, `diagnostics.py` | testes de logs, métricas e traces U/G; correlação K/G | **Comprovado:** instrumentação do serviço e exportação opcional, sem stack central. |
+| RNF-006 — portabilidade | `application/ports.py`, adaptadores, Compose | contratos U/I/G; aplicação empacotada K/G | **Comprovado:** execução sem cloud e sem outro serviço DocPipe; compatibilidade com Azure real é evolução `v1.1.0`. |
+| RNF-007 — manutenção/versão | `pyproject.toml`, migrations, rotas/evento | `ci-quality` G; OpenAPI U/G; migration PostgreSQL I/G | **Parcial:** qualidade passa, mas pacote/lock `0.1.0` e OpenAPI `1.0.0` exigem decisão/alinhamento na 10b; B6. |
+| RNF-008 — CI | `.github/workflows/ci.yml`, `verify_pytest_junit.py` | jobs e verificadores G; PR P | **Comprovado:** três checks, opt-ins, cobertura, JUnit, imagem e serviços reais passaram para o SHA auditado. Proteção efetiva da branch não foi acessível; L3. |
+| RNF-009 — autonomia | Compose próprio, banco/migrations/CI próprios, contrato HTTP/evento | inspeção C; K/G sem Processing, broker sem consumidor | **Comprovado:** fluxo próprio sem checkout, banco ou processo de outro microserviço. |
+| CT-001 — PDF | API/storage/DB/outbox | `packaged` K/G | **Comprovado:** `202`, blob, DB e outbox. |
+| CT-002 — PNG/JPEG | mesmos módulos | `packaged` K/G | **Comprovado:** ambos percorrem fluxo e mensagem. |
+| CT-003 — vazio | `file_validation.py` | unitário U/G e HTTP K/G | **Comprovado:** rejeitado. |
+| CT-004 — tipo inválido | `file_validation.py` | unitário U/G e HTTP K/G | **Comprovado:** `415`, sem novo evento/blob completo. |
+| CT-005 — excede limite | `file_validation.py`, handlers | limite unitário U/G; OpenAPI U/G | **Parcial:** `413` está mapeado, mas não foi exercitado por HTTP na imagem; corpo sem limite prévio, B1. |
+| CT-006 — falha de storage | `azure_blob.py`, handlers | falha local simulada U/G; Azurite saudável I/K/G | **Parcial:** falta falha real do Azurite sem falso sucesso e recuperação; B2. |
+| CT-006A — nome malicioso | `sanitize_original_name`, chaves opacas | testes de nomes/local U/G; chave Azurite K/G | **Comprovado:** caminho do cliente não vira chave; adaptador local contém escape. |
+| CT-007 — broker indisponível | outbox e worker | falha do broker K/G | **Comprovado:** API aceita e evento permanece pendente. |
+| CT-008 — worker reiniciado | `outbox_worker.py` | recuperação K/G | **Comprovado:** canal perdido produz saída não zero, reinício explícito publica pendentes. |
+| CT-009 — ausente | rota GET | API U/G | **Comprovado:** `404`. |
+| CT-010/011 — carga/escala | laboratório histórico | exclusão explícita em `REQUIREMENTS.md` | **Não aplicável:** retirados do aceite local; não excluir testes funcionais. |
+| CT-012 — reinício API/worker | Compose e volumes | recriação K/G | **Comprovado:** dados aceitos consultáveis. |
+| CT-013 — DB/Azurite indisponível | health, erros HTTP, reconciliação | mocks API U/G; trigger DB K/G | **Parcial:** trigger simula falha de persistência, não indisponibilidade temporária real de PostgreSQL ou Azurite com recuperação; B2. |
+| CT-014 — bytes repetidos | IDs opacos e SHA | `packaged` K/G | **Comprovado:** IDs distintos e checksum igual; sem deduplicação. |
+| CT-015 — reenvio | `requeue_outbox_event.py`, repositório | U/G; reenvio empacotado K/G | **Parcial:** IDs/payload, publicação e log são testados; corrida real reenvio/publicação em PostgreSQL não é exercitada; B3. |
+| CT-016 — confirm seguido de commit falho | publisher e UoW | `test_uncommitted_confirmation_can_be_published_again` U/G | **Parcial:** o teste publica duas vezes com dublês, sem falha real de commit após confirm; B4. |
+| CT-017 — dependências e volumes | Compose | recriação K/G | **Comprovado:** DB, blob, mensagem durável e pendente sobrevivem à recriação. |
+
+### Definição de pronto da versão
+
+| Critério de `REQUIREMENTS.md`, seção 5 | Estado e razão |
+| --- | --- |
+| Instalação, migrations e Compose reproduzíveis | **Comprovado** em G e K; comandos documentados em `README.md`/`docs/CI.md`. |
+| Serviços reais separados, sem Processing | **Comprovado** em G/K. |
+| Blob privado, SHA, metadados, outbox e mensagem conjunta | **Comprovado** em G/K. |
+| Contratos, erros, duplicidade, reenvio, órfãos e reinícios | **Parcial** por CT-005/006/013/015/016; B1–B4. |
+| Requisitos associados a evidências da revisão e checks GitHub | **Parcial**: G pertence ao SHA correto, mas os critérios parciais acima carecem de prova. |
+| Imagem sem root, dependências verificadas, sem segredos reais | **Parcial**: UID confirmado; inventário de vulnerabilidades e imagem incompletos, B5. |
+| `ci-image` usa imagem e HTTP sem mounts do checkout | **Comprovado** por G e assertions de K; checkout executa só o harness. |
+| Documentação, versão, limitações e decisão de aceite | **Parcial**: relatório e correções documentais existem na 10a; alinhamento da versão/aceite é 10b, B6. |
+
+## Revisão de segurança, CI e operação
+
+- **Segredos:** somente `.env.example` foi encontrado entre os arquivos `.env`
+  rastreados; `.env` é ignorado e `.dockerignore` o exclui da imagem. A busca
+  dirigida por padrões de chave/token/senha apontou apenas `.env.example`,
+  com credenciais declaradas como locais no README. Isso não constitui prova
+  exaustiva de ausência de segredos, inclusive no histórico ou em artefatos.
+- **Portas/privacidade:** Compose publica API, worker, PostgreSQL, Azurite e
+  RabbitMQ em `127.0.0.1` por default. Blobs são criados com acesso privado;
+  as respostas públicas não incluem bytes ou credenciais. Não usar os valores
+  de exemplo em ambiente compartilhado ou de produção.
+- **Entrada/recursos:** assinatura, tipo, extensão, nome, chave opaca e limite
+  de arquivo têm validação e testes. `request.form()` executa antes de
+  `ValidatedFileStream`; não foi localizado limite explícito do corpo HTTP ou
+  de espaço temporário no Compose. O risco é consumo de disco antes do `413`.
+- **Logs/erros:** handlers retornam códigos e mensagens estáveis; os testes
+  inspecionam logs/métricas sem conteúdo nem labels de alta cardinalidade. A
+  busca estática não substitui ensaio de caminhos excepcionais completos.
+- **Imagem/permissões:** Dockerfile fixa `USER 10001:10001`, usa lockfile,
+  copia pacote/migrations e exclui dev deps; K verifica UID, image ID e zero
+  mounts de aplicação. Os volumes duráveis pertencem aos serviços de dados.
+  Imagens locais antigas e um `docpipe-control-plane` já ativo foram apenas
+  listados; nenhum desses recursos foi modificado ou removido.
+- **Dependências:** `uv.lock` contém 50 pacotes na cadeia de execução, 15
+  diretos. Em 02/10/2026, consultas públicas a GitHub Global Security
+  Advisories com `ecosystem=pip` e `affects=nome@versão` obtiveram resposta
+  para 45 pacotes, sem alertas retornados para essas versões. A sintaxe foi
+  conferida contra uma versão historicamente vulnerável. O limite da API
+  interrompeu cinco consultas: `typing-extensions`, `typing-inspection`,
+  `tzdata`, `urllib3` e `wrapt`. `uvicorn` foi consultado separadamente antes
+  do limite. OSV querybatch retornou HTTP 403.
+  As imagens Python, uv, PostgreSQL, RabbitMQ e Azurite têm tags declaradas,
+  mas não houve inventário de seus pacotes/digests ou advisories. **Não há
+  conclusão de ausência de vulnerabilidades.**
+- **CI:** workflow padrão concede `contents: read`, usa ações pinadas por SHA,
+  timeouts e concorrência; jobs têm projetos isolados e limpeza com escopo.
+  O workflow manual do laboratório é histórico e não integra os três checks.
+  `ci-tests` sobe infraestrutura só após testes sem serviços, publica JUnit e
+  cobertura sempre e limpa volumes do projeto do run. `ci-image` publica
+  diagnóstico apenas em falha; o sucesso é verificável pelo run G, sem JUnit
+  baixável via acesso público. API pública retornou HTTP 401 ao consultar
+  proteção da `main` e 403 ao baixar o artefato `ci-tests`.
+- **Operação:** README e `docs/CI.md` trazem setup controlado, health,
+  reenvio, reconciliação somente leitura, reinício explícito do worker e
+  encerramento que preserva volumes. Os testes `packaged` recriam containers
+  preservando os dados. A documentação de política para dados pessoais reais
+  continua sendo condição anterior a esse uso, não prova da operação local.
+
+## Achados e trabalho priorizado para a 10b
+
+`P1` indica critério obrigatório ou evidência essencial que impede o aceite;
+`P2` indica melhoria adiável ou acesso complementar. Nenhum achado abaixo é
+apresentado como falha de teste que não ocorreu.
+
+| ID | Prioridade e tipo | Local, impacto e ação verificável |
+| --- | --- | --- |
+| B1 | P1 — defeito/limite | `api/dependencies.py` chama `request.form()` antes do limite em `application/file_validation.py`; RNF-001, RF-002, CT-005 e `DESIGN.md` §12 exigem recursos limitados. Estabelecer limite de corpo/uso temporário antes do parse, preservando streaming; provar `413`, ausência de aceitação parcial e uso limitado de recursos por HTTP real. |
+| B2 | P1 — evidência funcional | CT-006 e CT-013: falha local simulada e trigger DB não exercitam indisponibilidade temporária real de Azurite/PostgreSQL. Em projeto descartável, interromper uma dependência por vez, observar HTTP/readiness, preservar registros aceitos, restaurar e verificar consulta/publicação/reconciliação. Usar a imagem entregue se a correção a alterar. |
+| B3 | P1 — evidência de concorrência | CT-015: reenvio condicional está em `database/repositories.py`; testes atuais cobrem o caminho normal e evento publicado, mas não uma corrida PostgreSQL com worker ativo. Provar que o resultado conserva ID/payload e não reativa evento publicado; corrigir somente se a corrida revelar defeito. |
+| B4 | P1 — evidência de duplicação permitida | CT-016: `test_uncommitted_confirmation_can_be_published_again` usa dublê e publica duas vezes sem falha de commit. Em infraestrutura isolada, injetar falha após confirm e antes do commit, reiniciar/reprocessar e verificar eventual repetição com o mesmo `event_id`, sem outro documento. Não exigir entrega exatamente uma vez. |
+| B5 | P1 — revisão de dependências incompleta | `uv.lock`, Dockerfile e Compose: cinco pacotes de execução e as imagens ficaram sem avaliação de advisories aplicáveis. Completar consulta atualizada, registrar fonte/data/versões/digests e triagem; corrigir somente vulnerabilidade aplicável encontrada. A indisponibilidade das fontes é lacuna de evidência, não vulnerabilidade confirmada. |
+| B6 | P1 — preparação da candidata | `pyproject.toml` e `uv.lock` declaram `0.1.0`; `api/app.py` declara OpenAPI `1.0.0`. Definir e alinhar versão e documentação na 10b, atualizar lockfile pela ferramenta, preservar `/v1` e `document.received.v1` e reexecutar checks pertinentes da revisão resultante. |
+| L1 | P2 — durabilidade da evidência | JUnit locais não carregam SHA; artefatos do GitHub expiram em sete dias e `ci-image` só publica em falha. Preservar resumo sanitizado e, se necessário na 10b, ampliar a retenção útil sem reduzir as proteções. G já comprova os checks da revisão auditada. |
+| L2 | P2 — documentação | `docs/DESIGN.md` e `AGENTS.md` tinham afirmações obsoletas sobre defaults e estado das etapas; a 10a as alinha. Rever referências restantes após mudanças da 10b. |
+| L3 | P2 — governança/acesso | A API pública não permitiu ler branch protection (HTTP 401). Confirmar com acesso autorizado se os três checks são exigidos pela `main`; isso não invalida a conclusão observada dos jobs G. |
+
+Não há tag local de `v1.0.0`; não foi consultado o inventário remoto de tags.
+A 10b decidirá a versão candidata, fechará B1–B6 e executará os gates sobre
+sua revisão final. A confirmação do usuário precede tag e publicação. Nenhuma
+campanha acadêmica, conta Azure, Kubernetes ou Processing entra nessa lista.

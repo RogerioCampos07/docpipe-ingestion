@@ -6,9 +6,11 @@ runners hospedados pelo GitHub e não publica imagens, cria releases ou faz
 deploy.
 
 O workflow mantém os checks `ci-quality`, `ci-tests` e `ci-image`. A Etapa 9
-amplia `ci-image` para validar a aplicação empacotada com a infraestrutura
-operacional local. Os resultados locais não comprovam a execução dos jobs no
-GitHub Actions para uma revisão candidata.
+ampliou `ci-image` para validar a aplicação empacotada com a infraestrutura
+operacional local. A auditoria 10a confirma a execução dos três jobs no GitHub
+Actions para `7e48d5f` e registra o alcance em `docs/RELEASE_AUDIT.md`.
+Resultados locais de outra revisão não substituem esses jobs. A 10b deve
+verificar os checks novamente se alterar a candidata.
 
 ## Checks
 
