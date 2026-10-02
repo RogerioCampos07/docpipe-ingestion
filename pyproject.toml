@@ -58,6 +58,7 @@ markers = [
     'postgresql: integration tests requiring Docker Compose PostgreSQL',
     'azurite: integration tests requiring Docker Compose Azurite',
     'stack: integration tests requiring all Docker Compose services',
+    'packaged: integration tests validating the built image in Docker Compose',
 ]
 
 [tool.mypy]

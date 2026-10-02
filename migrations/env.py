@@ -4,11 +4,11 @@ from typing import Literal
 from alembic import context
 from sqlalchemy.engine import make_url
 
+from docpipe_ingestion.infrastructure.database import models  # noqa: F401
 from docpipe_ingestion.infrastructure.database.base import Base
 from docpipe_ingestion.infrastructure.database.engine import (
     create_database_engine,
 )
-from docpipe_ingestion.infrastructure.database import models  # noqa: F401
 from docpipe_ingestion.infrastructure.settings import Settings
 
 config = context.config
@@ -27,6 +27,7 @@ def _settings() -> Settings:
             'sqlite' if backend == 'sqlite' else 'postgresql'
         )
         return Settings(
+            environment='test' if backend == 'sqlite' else 'local',
             database_backend=database_backend,
             database_url=configured_url,
         )

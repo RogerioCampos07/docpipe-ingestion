@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import delete
+from sqlalchemy.exc import IntegrityError
 
 from docpipe_ingestion.domain.models import (
     Document,
@@ -11,6 +12,7 @@ from docpipe_ingestion.domain.models import (
     OutboxEvent,
 )
 from docpipe_ingestion.infrastructure.database.engine import (
+    SessionFactory,
     create_database_engine,
     create_session_factory,
 )
@@ -117,10 +119,30 @@ def test_postgresql_rolls_back_document_and_outbox_together(
         created_at=now,
         updated_at=now,
     )
+    event_id = uuid4()
+    event = OutboxEvent(
+        id=event_id,
+        aggregate_id=uuid4(),
+        event_type='document.received.v1',
+        payload={'event_id': str(event_id)},
+        created_at=now,
+    )
     try:
-        with SqlAlchemyUnitOfWork(factory) as unit:
-            unit.documents.add(document)
+        with pytest.raises(IntegrityError):
+            _commit_document_and_event(factory, document, event)
         with SqlAlchemyUnitOfWork(factory) as unit:
             assert unit.documents.get(document_id) is None
+            assert unit.outbox_events.get(event_id) is None
     finally:
         engine.dispose()
+
+
+def _commit_document_and_event(
+    factory: SessionFactory,
+    document: Document,
+    event: OutboxEvent,
+) -> None:
+    with SqlAlchemyUnitOfWork(factory) as unit:
+        unit.documents.add(document)
+        unit.outbox_events.add(event)
+        unit.commit()

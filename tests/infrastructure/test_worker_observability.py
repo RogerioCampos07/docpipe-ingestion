@@ -85,6 +85,8 @@ def test_worker_lifecycle_preserves_functional_readiness(
         engine.connect.side_effect = RuntimeError('database unavailable')
     broker = Mock()
     broker.is_ready.return_value = dependency_failure != 'broker'
+    publisher = Mock()
+    publisher.broker_ready = dependency_failure != 'broker'
     provider = tracing.create_tracer_provider(
         settings, exporter=InMemorySpanExporter()
     )
@@ -99,6 +101,8 @@ def test_worker_lifecycle_preserves_functional_readiness(
         assert ready_checks[0]() is (dependency_failure is None)
         stop.set()
 
+    publisher.run = run
+
     monkeypatch.setattr(outbox_worker, 'Settings', lambda: settings)
     monkeypatch.setattr(
         outbox_worker, 'create_database_engine', Mock(return_value=engine)
@@ -108,7 +112,7 @@ def test_worker_lifecycle_preserves_functional_readiness(
         outbox_worker, 'RabbitMQPublisher', Mock(return_value=broker)
     )
     monkeypatch.setattr(
-        outbox_worker, 'OutboxPublisher', Mock(return_value=Mock(run=run))
+        outbox_worker, 'OutboxPublisher', Mock(return_value=publisher)
     )
     monkeypatch.setattr(outbox_worker, 'WorkerMonitoringServer', monitor)
     monkeypatch.setattr(

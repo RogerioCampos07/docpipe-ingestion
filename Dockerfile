@@ -22,8 +22,14 @@ COPY migrations ./migrations
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable
 
+RUN groupadd --system --gid 10001 docpipe \
+    && useradd --system --uid 10001 --gid 10001 \
+        --no-create-home --shell /usr/sbin/nologin docpipe
+
 ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
+
+USER 10001:10001
 
 CMD ["uvicorn", "docpipe_ingestion.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

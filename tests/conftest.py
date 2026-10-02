@@ -26,6 +26,7 @@ def pytest_configure(config: pytest.Config) -> None:
         for name in (
             'DOCPIPE_RABBITMQ_INTEGRATION',
             'DOCPIPE_STACK_INTEGRATION',
+            'DOCPIPE_PACKAGED_IMAGE_INTEGRATION',
         )
     )
     for name in tuple(os.environ):
@@ -51,6 +52,7 @@ def database_engine(tmp_path: Path) -> Iterator[Engine]:
     engine = create_database_engine(
         Settings(
             environment='test',
+            database_backend='sqlite',
             database_url=f'sqlite:///{tmp_path / "test.db"}',
             sqlite_wal_enabled=True,
         )

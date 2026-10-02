@@ -4,6 +4,9 @@ from types import TracebackType
 from typing import Self, cast
 from uuid import UUID
 
+import pytest
+
+from docpipe_ingestion.application.errors import BrokerPublishError
 from docpipe_ingestion.application.ports import UnitOfWork
 from docpipe_ingestion.application.publish_outbox import (
     OutboxPublisher,
@@ -106,11 +109,18 @@ class StubBroker:
         self.error = error
         self.events: list[OutboxEvent] = []
         self.closed = False
+        self.ready = True
+        self.close_after_publish_failure = False
 
     def publish(self, event: OutboxEvent) -> None:
         self.events.append(event)
         if self.error:
+            if self.close_after_publish_failure:
+                self.ready = False
             raise self.error
+
+    def is_ready(self) -> bool:
+        return self.ready
 
     def close(self) -> None:
         self.closed = True
@@ -150,6 +160,22 @@ def test_failure_is_recorded_and_backed_off() -> None:
     assert result == 0
     assert events.failures == ['RuntimeError']
     assert sleeps == [2]
+
+
+def test_closed_channel_stops_worker_after_preserving_failed_attempt() -> None:
+    events = StubEvents(_event())
+    broker = StubBroker(RuntimeError('connection closed'))
+    broker.close_after_publish_failure = True
+    sleeps: list[float] = []
+
+    publisher = _publisher(events, broker, sleeps)
+    with pytest.raises(BrokerPublishError, match='channel closed'):
+        publisher.process_batch()
+
+    assert broker.events == [_event()]
+    assert events.failures == ['RuntimeError']
+    assert sleeps == []
+    assert not publisher.broker_ready
 
 
 def test_exhausted_event_is_not_published() -> None:

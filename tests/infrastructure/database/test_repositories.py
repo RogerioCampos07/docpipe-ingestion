@@ -125,3 +125,51 @@ def test_outbox_repository_tracks_failure_and_confirmed_publication(
     assert event.last_error is None
     assert document is not None
     assert document.status is DocumentStatus.PUBLISHED
+
+
+def test_outbox_requeue_resets_eligibility_without_changing_contract(
+    session_factory: SessionFactory,
+) -> None:
+    with SqlAlchemyUnitOfWork(session_factory) as unit_of_work:
+        unit_of_work.documents.add(_document())
+        unit_of_work.outbox_events.add(_event())
+        unit_of_work.commit()
+
+    with SqlAlchemyUnitOfWork(session_factory) as unit_of_work:
+        for _ in range(3):
+            unit_of_work.outbox_events.record_failure(EVENT_ID, 'timeout')
+        unit_of_work.commit()
+
+    with SqlAlchemyUnitOfWork(session_factory) as unit_of_work:
+        assert unit_of_work.outbox_events.requeue_exhausted(
+            EVENT_ID, max_attempts=3
+        )
+        unit_of_work.commit()
+
+    with SqlAlchemyUnitOfWork(session_factory) as unit_of_work:
+        event = unit_of_work.outbox_events.get(EVENT_ID)
+    assert event is not None
+    assert event.id == EVENT_ID
+    assert event.aggregate_id == DOCUMENT_ID
+    assert event.payload == _event().payload
+    assert event.attempts == 0
+    assert event.next_attempt_at is None
+    assert event.last_error == 'timeout'
+
+
+def test_outbox_requeue_does_not_change_published_event(
+    session_factory: SessionFactory,
+) -> None:
+    with SqlAlchemyUnitOfWork(session_factory) as unit_of_work:
+        unit_of_work.documents.add(_document())
+        unit_of_work.outbox_events.add(_event())
+        unit_of_work.commit()
+
+    with SqlAlchemyUnitOfWork(session_factory) as unit_of_work:
+        unit_of_work.outbox_events.mark_published(EVENT_ID, NOW)
+        unit_of_work.commit()
+
+    with SqlAlchemyUnitOfWork(session_factory) as unit_of_work:
+        assert not unit_of_work.outbox_events.requeue_exhausted(
+            EVENT_ID, max_attempts=3
+        )

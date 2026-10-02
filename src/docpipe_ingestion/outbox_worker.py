@@ -7,6 +7,7 @@ from threading import Event
 
 from sqlalchemy import text
 
+from docpipe_ingestion.application.errors import BrokerPublishError
 from docpipe_ingestion.application.publish_outbox import (
     OutboxPublisher,
     PublisherSettings,
@@ -87,7 +88,7 @@ def main() -> None:
             try:
                 with engine.connect() as connection:
                     connection.execute(text('SELECT 1'))
-                return broker.is_ready()
+                return publisher.broker_ready
             except Exception:
                 return False
 
@@ -104,6 +105,18 @@ def main() -> None:
     )
     try:
         publisher.run(stop_event)
+    except BrokerPublishError:
+        logger.exception(
+            'outbox worker stopped because RabbitMQ became unavailable',
+            extra={
+                'operation': 'service.stop',
+                'status': 'failure',
+                'dependency_type': 'broker',
+                'dependency_backend': 'rabbitmq',
+                'error_category': 'channel_unavailable',
+            },
+        )
+        raise
     finally:
         if monitoring is not None:
             monitoring.close()

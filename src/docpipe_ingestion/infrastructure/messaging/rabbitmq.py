@@ -34,6 +34,7 @@ class RabbitMQPublisher:
         self._exchange = exchange
         self._routing_key = routing_key
         self._tracer_provider = tracer_provider
+        self._closed = False
         try:
             self._connection, self._channel = self._connect(
                 url,
@@ -72,6 +73,10 @@ class RabbitMQPublisher:
         return connection, channel
 
     def publish(self, event: OutboxEvent) -> None:
+        if not self.is_ready():
+            raise BrokerPublishError(
+                'RabbitMQ connection or channel is closed'
+            )
         try:
             headers = current_trace_context() or event.trace_context or {}
             with span(
@@ -106,8 +111,29 @@ class RabbitMQPublisher:
             ) from error
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         if self._connection.is_open:
-            self._connection.close()
+            try:
+                self._connection.close()
+            except Exception:
+                # The transport may already be gone; shutdown must still
+                # release the worker process cleanly.
+                pass
 
     def is_ready(self) -> bool:
-        return bool(self._connection.is_open and self._channel.is_open)
+        if self._closed:
+            return False
+        try:
+            if not self._connection.is_open or not self._channel.is_open:
+                self._closed = True
+                return False
+            self._connection.process_data_events(time_limit=0)
+        except Exception:
+            self._closed = True
+            return False
+        ready = bool(self._connection.is_open and self._channel.is_open)
+        if not ready:
+            self._closed = True
+        return ready

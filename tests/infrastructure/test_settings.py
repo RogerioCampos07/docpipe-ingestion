@@ -21,9 +21,11 @@ def test_settings_have_safe_local_defaults(
 
     assert settings.service_name == 'DocPipe Ingestion'
     assert settings.environment == 'local'
-    assert settings.database_url == 'sqlite:///dataset/docpipe-ingestion.db'
+    assert settings.database_backend == 'postgresql'
+    assert settings.database_url.startswith('postgresql+psycopg://')
     assert settings.sqlite_timeout_seconds == DEFAULT_SQLITE_TIMEOUT_SECONDS
     assert settings.sqlite_wal_enabled is True
+    assert settings.storage_backend == 'azurite'
     assert settings.storage_root == Path('dataset/documents')
     assert settings.max_file_size_bytes == 10 * 1024 * 1024
     assert settings.storage_chunk_size_bytes == 64 * 1024
@@ -61,7 +63,11 @@ def test_settings_reject_mismatched_database_backend(
 
 
 def test_local_storage_does_not_require_blob_configuration() -> None:
-    settings = Settings(storage_backend='local', blob_connection_string=None)
+    settings = Settings(
+        environment='test',
+        storage_backend='local',
+        blob_connection_string=None,
+    )
 
     assert settings.storage_backend == 'local'
 
@@ -69,6 +75,21 @@ def test_local_storage_does_not_require_blob_configuration() -> None:
 def test_azurite_requires_blob_connection_string() -> None:
     with pytest.raises(ValidationError):
         Settings(storage_backend='azurite', blob_connection_string=None)
+
+
+def test_sqlite_is_limited_to_explicit_test_configuration() -> None:
+    with pytest.raises(ValidationError, match='test fixtures'):
+        Settings(
+            database_backend='sqlite',
+            database_url='sqlite:///local.db',
+        )
+
+    settings = Settings(
+        environment='test',
+        database_backend='sqlite',
+        database_url='sqlite:///fixture.db',
+    )
+    assert settings.database_backend == 'sqlite'
 
 
 def test_enabled_traces_require_exporter() -> None:

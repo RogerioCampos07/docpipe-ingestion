@@ -12,10 +12,21 @@ from docpipe_ingestion.infrastructure.storage.local import LocalDocumentStorage
 def create_document_storage(settings: Settings) -> DocumentStorage:
     if settings.storage_backend == 'local':
         return LocalDocumentStorage(settings.storage_root)
+    storage = create_azure_blob_storage(settings)
+    storage.ensure_private_container()
+    return storage
+
+
+def create_azure_blob_storage(
+    settings: Settings,
+) -> AzureBlobDocumentStorage:
+    """Construct the Azurite adapter without creating remote resources."""
+    if settings.storage_backend != 'azurite':
+        raise ValueError('Azure blob storage requires the azurite backend')
     connection_string = settings.blob_connection_string
     if connection_string is None:
         raise RuntimeError('blob storage configuration is incomplete')
-    storage = AzureBlobDocumentStorage(
+    return AzureBlobDocumentStorage(
         AzureBlobStorageConfig(
             connection_string=connection_string.get_secret_value(),
             container=settings.blob_container,
@@ -27,5 +38,3 @@ def create_document_storage(settings: Settings) -> DocumentStorage:
             block_size=settings.blob_block_size_bytes,
         )
     )
-    storage.ensure_private_container()
-    return storage
