@@ -78,8 +78,8 @@ O Compose principal inclui PostgreSQL, Azurite, RabbitMQ, preparação controlad
 API e worker separados. A imagem executa como usuário não-root. A prova
 `packaged` executou com sucesso para a revisão auditada no GitHub Actions;
 o alcance e as pendências de cenários específicos estão no relatório 10a. O
-pacote está em `0.1.0` e o OpenAPI declara `1.0.0`; o alinhamento pertence à
-10b.
+pacote, o lockfile e o OpenAPI declaram `1.0.0` após o alinhamento inicial da
+10b. As demais pendências da candidata permanecem na auditoria.
 
 Banco, RabbitMQ e armazenamento são dependências legítimas de infraestrutura;
 independência entre microsserviços não significa ausência dessas dependências.
