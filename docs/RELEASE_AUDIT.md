@@ -325,3 +325,130 @@ não substituem a prova operacional PostgreSQL/Azurite na imagem.
 **B1 permanece parcial**: falta comprovar `413`, limpeza e ausência de
 efeitos por HTTP real na imagem entregue, no bloco 4. Também ficam para os
 gates finais da candidata a suíte/cobertura completa e os checks reais de PR.
+
+## Continuação da 10b — bloco 3: concorrência entre reenvio e publicação
+
+Base inicial: `35b39a0422e47383b53b43533262f54048a50b49`, em
+`release/phase-10b-v1.0.0`, com a alteração preexistente em
+`tests/api/test_openapi.py` preservada. Os resultados de 03/10/2026 UTC
+pertencem à árvore de trabalho modificada a partir dessa base, não ao commit
+limpo. As integrações usaram um projeto Compose descartável com PostgreSQL,
+RabbitMQ e, nos grupos de CI, Azurite. Cada cenário de concorrência criou e
+removeu seu próprio banco PostgreSQL, aplicando nele as migrations; cada um
+usou fila RabbitMQ isolada e sessões independentes.
+
+O diagnóstico inicial foi confirmado: depois que B confirma o reenvio,
+`attempts` é zero. O `UPDATE` condicional de A exige
+`attempts >= max_attempts`, e o worker só seleciona
+`attempts < max_attempts`. Na ordem original, PostgreSQL rejeitou A sem espera
+pelo lock do worker (`pg_blocking_pids` vazio). Não foi demonstrado defeito
+de produção; a expectativa de lock do worker foi removida.
+
+As três provas têm objetivos distintos:
+
+1. **Reenvio sem commit:** A mantém o `UPDATE` real sem commit; o worker,
+   usando outra sessão, não encontra/publica o evento. Após o commit de A, o
+   ciclo seguinte recebe confirm real do RabbitMQ e persiste documento e
+   outbox como publicados. Esta prova não é usada para atribuir
+   especificamente `SKIP LOCKED`; essa assertion continua em
+   `tests/integration/test_postgresql.py`.
+2. **Leitura antiga após publicação:** A lê o evento esgotado e pausa; B
+   confirma o reenvio; o worker publica e recebe confirm do broker, pausando
+   antes do commit PostgreSQL. A retoma seu `UPDATE`, é rejeitado pela
+   condição reavaliada sem espera exigida, e o banco ainda mostra o estado
+   anterior ao commit do worker. O worker então conclui normalmente. A
+   mensagem observada corresponde aos IDs, correlação e payload originais;
+   documento e outbox terminam publicados, sem reativação.
+3. **Contenção entre reenvios:** A lê o evento esgotado e pausa; B executa o
+   `UPDATE` real e pausa antes do commit; o `UPDATE` de A bloqueia. A consulta
+   a `pg_stat_activity` identifica PID de A em espera por `Lock` e PID de B
+   entre seus `pg_blocking_pids` (na execução final, A=149 e B=150;
+   `wait_event=transactionid`, `blockers=[150]`). Depois do commit de B,
+   PostgreSQL reavalia a condição e rejeita A. O worker publica depois, com
+   confirm real e estado final coerente. Essa prova é contenção entre
+   reenvios, não espera pelo lock do worker.
+
+O primeiro grupo de integração revelou interferência de eventos pendentes de
+outros testes no banco compartilhado. O harness foi ajustado para criar banco
+descartável próprio por cenário. A repetição completa passou. Também foi
+corrigido o teste de reenvio que verificava logs `INFO` sem configurar o nível
+de captura; ele agora solicita esse nível explicitamente e passa com a
+configuração padrão do workflow, preservando as assertions dos campos do log.
+
+| Verificação na árvore de trabalho baseada no commit acima | Resultado |
+| --- | --- |
+| `pytest tests/integration/test_requeue_publication_race.py` com PostgreSQL/RabbitMQ | Exit `0`: 3 aprovados; JUnit dirigido aceito exigindo os 3 casos |
+| Regressões de reenvio, publicação, repositórios, PostgreSQL e RabbitMQ | Exit `0`: 18 aprovados, sem skips; sem `--log-level` adicional |
+| Grupo sem serviços do `ci-tests` | Exit `0`: 188 aprovados, 10 excluídos pela seleção, zero skips; JUnit aceito |
+| Grupo de integrações do `ci-tests` | Exit `0`: 9 aprovados, 189 excluídos pela seleção, zero skips; JUnit aceito com os cinco módulos existentes e o módulo novo exigido em `=3` |
+| JUnit final | `/tmp/docpipe-b3-adjust-20261003/unit-final.xml` e `integration-final.xml`; ambos aceitos pelo verificador |
+| Cobertura combinada unitária e integração | 88% (1943 statements, cobertura com branches); `pyproject.toml` não configura percentual mínimo (`fail_under`) |
+| `task lint`, `task format-check`, `task typecheck`, `task typos`, `git diff --check` | Exit `0` |
+
+**B3 está comprovado nesta árvore de trabalho.** A cobertura é a da seleção
+unitária e integrada desta revisão; não inclui testes `packaged`. A entrega
+pelo menos uma vez permanece; as mensagens vistas nestes percursos não
+estabelecem garantia geral de entrega única. B4, revisão da imagem e gates
+finais continuam reservados aos blocos posteriores.
+
+## Continuação da 10b — subbloco 4A: falha e recuperação
+
+Base avaliada: `d37fd3a525fcdc5ef9860ad75ab9f0703dccd8cd`, branch
+`release/phase-10b-v1.0.0`. As evidências abaixo foram produzidas em
+03/10/2026 UTC contra a imagem `docpipe-ingestion:phase10b-4a-d37fd3a-worktree`,
+ID/digest `sha256:355c08b8d2498ae6b844ab242a48c2cb9e31534863f02233007b3be81f1b553c`.
+A imagem contém o código de runtime da candidata nesta base; as alterações
+deste subbloco são somente no harness e neste relatório, portanto não foram
+incorporadas à imagem. O Compose oficial foi executado no projeto isolado
+`docpipe-phase10b-4a`, com PostgreSQL, Azurite, RabbitMQ, API e worker reais.
+Os resultados pertencem à árvore de trabalho modificada baseada no SHA
+informado, não a um commit limpo. A stack e seus volumes descartáveis foram
+removidos após as validações; `docpipe-control-plane` foi preservado.
+
+Os cenários B2 demonstraram que, com Azurite parado, readiness ficou
+indisponível e o upload retornou `503 storage_unavailable`, sem novo
+documento, evento ou blob. Após a recuperação, readiness voltou, e o
+documento e blob aceitos antes da falha continuaram íntegros. Com PostgreSQL
+parado, readiness ficou indisponível e o upload retornou
+`503 persistence_unavailable`; nenhum documento ou evento novo foi gravado.
+O blob produzido antes da falha de persistência foi identificado pela
+reconciliação como órfão. O contrato atual exige sua detecção e diagnóstico,
+sem remoção automática; o objeto permaneceu disponível para recuperação
+operacional. O documento, blob e evento previamente aceitos permaneceram
+íntegros. Após restaurar PostgreSQL e reiniciar explicitamente o worker, o
+evento pendente foi publicado e persistido como publicado. A recuperação
+comprovada é local a esta candidata e não representa failover automático.
+
+O cenário B4 criou um documento e evento pendente, vinculou uma fila isolada
+ao exchange real e instalou no banco descartável um constraint trigger
+diferido, filtrado pelo ID do evento, para falhar somente o commit que
+registraria a publicação. A primeira mensagem foi lida da fila após a
+confirmação real do RabbitMQ. A exceção do trigger demonstrou a falha do
+commit; consulta PostgreSQL posterior confirmou rollback dos estados do
+documento e da outbox, sem novo documento/evento. O trigger foi removido antes
+da retomada. O worker reiniciado republicou o mesmo `event_id`, payload e
+correlação; o estado final foi persistido como publicado. As duas mensagens
+observadas neste teste demonstram a possibilidade legítima de duplicata após
+confirmação e falha de commit. O contrato continua sendo entrega pelo menos
+uma vez, sem garantia de exactly-once.
+
+| Verificação na árvore de trabalho baseada na revisão acima | Resultado |
+| --- | --- |
+| B2 dirigido: `DOCPIPE_PACKAGED_SCENARIO=b2` no harness empacotado | Exit `0`: 1 aprovado, sem skips; indisponibilidade, resposta, integridade, órfão reconciliado e retomada verificados |
+| B4 dirigido: `DOCPIPE_PACKAGED_SCENARIO=b4` no harness empacotado | Exit `0`: 1 aprovado, sem skips; confirmação, falha real do commit, rollback, duplicata e recuperação verificados |
+| Execução padrão de `tests/integration/test_packaged_compose.py -m packaged` | Exit `0`: 1 aprovado em 678,30 s, sem skips; execução integrada completa incluiu B2, B4 e persistência após recriação da stack |
+| Verificador JUnit da execução padrão, exigindo `tests.integration.test_packaged_compose=1` | Exit `0`: 1 teste executado e aceito em `/tmp/docpipe-phase10b-4a-full.xml` |
+| `uv run --locked task lint` | Exit `0` |
+| `uv run --locked task format-check` | Exit `0`: 121 arquivos já formatados |
+| `uv run --locked task typecheck` | Exit `0` |
+| `uv run --locked typos` | Exit `0` |
+| `git diff --check` | Exit `0` |
+
+**B2 e B4 estão comprovados nesta árvore de trabalho.** B2 depende da
+reconciliação operacional para localizar o blob órfão; a limpeza automática
+não é prometida pelo contrato. B4 confirma a janela de duplicação e a
+recuperação transacional, preservando entrega pelo menos uma vez. A validação
+foi local e empacotada; não é resultado de GitHub Actions nem de um commit
+final de release. B1 permanece parcial até a prova de limite HTTP real
+definida para o 4B; B5 continua aberto para a revisão final da imagem e das
+imagens de serviço no 4B.
