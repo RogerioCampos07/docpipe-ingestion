@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -71,7 +72,11 @@ def test_requeue_exhausted_event_preserves_identifiers_and_payload(
         max_attempts=3,
     )
 
-    use_case.execute(EVENT_ID)
+    with caplog.at_level(
+        logging.INFO,
+        logger='docpipe_ingestion.application.requeue_outbox_event',
+    ):
+        use_case.execute(EVENT_ID)
 
     with SqlAlchemyUnitOfWork(session_factory) as unit_of_work:
         event = unit_of_work.outbox_events.get(EVENT_ID)

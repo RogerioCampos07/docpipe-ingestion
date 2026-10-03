@@ -189,7 +189,8 @@ jobs:
             --require-module tests.integration.test_rabbitmq=1 \
             --require-module tests.integration.test_azurite=1 \
             --require-module tests.contracts.test_storage=1 \
-            --require-module tests.integration.test_shared_stack=1
+            --require-module tests.integration.test_shared_stack=1 \
+            --require-module tests.integration.test_requeue_publication_race=3
 
       - name: Generate coverage reports
         run: |
