@@ -11,7 +11,7 @@ from http import HTTPStatus
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pika  # type: ignore[import-untyped]
 import pytest
@@ -159,6 +159,8 @@ def _post_document_response(
     filename: str,
     media_type: str,
     content: bytes,
+    *,
+    timeout: float = 15,
 ) -> tuple[int, bytes]:
     boundary = f'docpipe-{UUID(int=int(time.time_ns()))}'
     body = b''.join((
@@ -178,7 +180,7 @@ def _post_document_response(
         headers={'Content-Type': f'multipart/form-data; boundary={boundary}'},
     )
     try:
-        with urlopen(request, timeout=15) as response:
+        with urlopen(request, timeout=timeout) as response:
             return response.status, response.read()
     except HTTPError as error:
         return error.code, error.read()
@@ -367,6 +369,20 @@ def _message(
     )
     assert method is not None
     assert properties is not None
+    return properties, json.loads(body)
+
+
+def _message_from_queue(
+    channel: BlockingChannel,
+    queue_name: str,
+) -> tuple[pika.spec.BasicProperties, dict[str, object]]:
+    method, properties, body = channel.basic_get(
+        queue=queue_name,
+        auto_ack=False,
+    )
+    assert method is not None
+    assert properties is not None
+    channel.basic_ack(method.delivery_tag)
     return properties, json.loads(body)
 
 
@@ -774,6 +790,310 @@ def _create_and_reconcile_orphan(stack: PackagedStack) -> str:
     return orphan_key
 
 
+def _verify_azurite_outage_recovery(
+    stack: PackagedStack,
+    known_document_id: UUID,
+) -> None:
+    document, event = _record_for_document(stack.engine, known_document_id)
+    assert document.status == 'PUBLISHED'
+    assert event.published_at is not None
+    blob = stack.container.get_blob_client(document.storage_key)
+    assert blob.download_blob().readall() == _FORMATS[0][2]
+    with Session(stack.engine) as session:
+        documents_before = session.scalar(
+            select(func.count()).select_from(DocumentModel)
+        )
+        events_before = session.scalar(
+            select(func.count()).select_from(OutboxEventModel)
+        )
+    assert documents_before is not None
+    assert events_before is not None
+    blobs_before = {item.name for item in stack.container.list_blobs()}
+
+    _compose('stop', 'azurite')
+    _wait_http_status(
+        f'{_required("CI_API_URL")}/health/ready',
+        HTTPStatus.SERVICE_UNAVAILABLE,
+    )
+    status, response = _post_document_response(
+        'azurite-unavailable.pdf',
+        'application/pdf',
+        _FORMATS[0][2],
+        timeout=60,
+    )
+    assert status == HTTPStatus.SERVICE_UNAVAILABLE, response
+    assert json.loads(response)['error']['code'] == 'storage_unavailable'
+    with Session(stack.engine) as session:
+        assert (
+            session.scalar(select(func.count()).select_from(DocumentModel))
+            == documents_before
+        )
+        assert (
+            session.scalar(select(func.count()).select_from(OutboxEventModel))
+            == events_before
+        )
+
+    _compose(
+        'up', '-d', '--no-build', '--wait', '--wait-timeout', '120', 'azurite'
+    )
+    _wait_http_status(f'{_required("CI_API_URL")}/health/ready', HTTPStatus.OK)
+    status, body = _request('GET', f'/v1/documents/{known_document_id}')
+    assert status == HTTPStatus.OK
+    assert json.loads(body)['status'] == 'PUBLISHED'
+    assert (
+        stack.container
+        .get_blob_client(document.storage_key)
+        .download_blob()
+        .readall()
+        == _FORMATS[0][2]
+    )
+    assert {item.name for item in stack.container.list_blobs()} == blobs_before
+
+
+def _verify_postgresql_outage_recovery(stack: PackagedStack) -> str:
+    _compose('stop', 'worker')
+    accepted_id = _post_document(
+        'postgres-pending.pdf', 'application/pdf', _FORMATS[0][2]
+    )
+    accepted_document, accepted_event = _record_for_document(
+        stack.engine, accepted_id
+    )
+    assert accepted_document.status == 'STORED'
+    assert accepted_event.published_at is None
+    accepted_blob = stack.container.get_blob_client(
+        accepted_document.storage_key
+    )
+    assert accepted_blob.download_blob().readall() == _FORMATS[0][2]
+
+    with Session(stack.engine) as session:
+        counts_before = (
+            session.scalar(select(func.count()).select_from(DocumentModel)),
+            session.scalar(select(func.count()).select_from(OutboxEventModel)),
+        )
+    assert None not in counts_before
+    blobs_before = {item.name for item in stack.container.list_blobs()}
+
+    _compose('stop', 'postgres')
+    _wait_http_status(
+        f'{_required("CI_API_URL")}/health/ready',
+        HTTPStatus.SERVICE_UNAVAILABLE,
+    )
+    status, response = _post_document_response(
+        'postgres-unavailable.pdf',
+        'application/pdf',
+        _FORMATS[0][2],
+        timeout=60,
+    )
+    assert status == HTTPStatus.SERVICE_UNAVAILABLE, response
+    assert json.loads(response)['error']['code'] == 'persistence_unavailable'
+    _compose(
+        'up', '-d', '--no-build', '--wait', '--wait-timeout', '120', 'postgres'
+    )
+    _wait_http_status(f'{_required("CI_API_URL")}/health/ready', HTTPStatus.OK)
+
+    with Session(stack.engine) as session:
+        assert counts_before == (
+            session.scalar(select(func.count()).select_from(DocumentModel)),
+            session.scalar(select(func.count()).select_from(OutboxEventModel)),
+        )
+        persisted_document, persisted_event = _document_and_event(
+            session, accepted_id
+        )
+        assert persisted_document.status == 'STORED'
+        assert persisted_event.published_at is None
+        assert persisted_event.id == accepted_event.id
+        assert persisted_event.payload == accepted_event.payload
+
+    new_blobs = {
+        item.name for item in stack.container.list_blobs()
+    } - blobs_before
+    assert len(new_blobs) == 1
+    orphan_key = new_blobs.pop()
+    assert stack.container.get_blob_client(orphan_key).exists()
+    report = json.loads(
+        _run_packaged_module('docpipe_ingestion.reconcile_storage')
+    )
+    assert orphan_key in report['orphaned_keys']
+    assert accepted_document.storage_key not in report['orphaned_keys']
+    assert accepted_blob.download_blob().readall() == _FORMATS[0][2]
+
+    _start_worker()
+    _wait_published(stack.engine, accepted_id)
+    published_document, published_event = _record_for_document(
+        stack.engine, accepted_id
+    )
+    assert published_document.status == 'PUBLISHED'
+    assert published_event.published_at is not None
+    assert published_event.id == accepted_event.id
+    _verify_expected_messages(
+        *_refresh_rabbit_and_collect_records(
+            stack,
+            [(published_document, published_event)],
+        ),
+    )
+    assert stack.container.get_blob_client(orphan_key).exists()
+    return orphan_key
+
+
+def _refresh_rabbit_and_collect_records(
+    stack: PackagedStack,
+    new_records: list[tuple[DocumentModel, OutboxEventModel]],
+) -> tuple[PackagedStack, list[tuple[DocumentModel, OutboxEventModel]]]:
+    retained_event_ids = stack.unacked_message_ids.copy()
+    _close_rabbitmq(stack.rabbit)
+    stack.unacked_message_ids.clear()
+    stack.rabbit = _open_rabbitmq()
+    stack.channel = stack.rabbit.channel()
+    retained_records = [
+        _record_for_event(stack.engine, UUID(event_id))
+        for event_id in retained_event_ids
+    ]
+    return stack, [*retained_records, *new_records]
+
+
+def _verify_confirmed_publish_commit_failure(  # noqa: PLR0914, PLR0915
+    stack: PackagedStack,
+) -> None:
+    _compose('stop', 'worker')
+    document_id = _post_document(
+        'commit-recovery.pdf', 'application/pdf', _FORMATS[0][2]
+    )
+    document, event = _record_for_document(stack.engine, document_id)
+    assert document.status == 'STORED'
+    assert event.published_at is None
+    original_payload = dict(event.payload)
+    queue_name = f'docpipe-ci-b4-{uuid4().hex}'
+    stack.channel.queue_declare(queue=queue_name, durable=True)
+    stack.channel.queue_bind(
+        queue=queue_name,
+        exchange='docpipe.events',
+        routing_key='document.received.v1',
+    )
+    function_name = 'docpipe_ci_fail_targeted_publish_commit'
+    trigger_name = 'docpipe_ci_fail_targeted_publish_commit'
+    trigger_installed = False
+    try:
+        with stack.engine.begin() as connection:
+            connection.execute(
+                text(
+                    f"""CREATE FUNCTION {function_name}()
+                    RETURNS trigger LANGUAGE plpgsql AS $$
+                    BEGIN
+                        IF NEW.id = '{event.id.hex}'
+                           AND OLD.published_at IS NULL
+                           AND NEW.published_at IS NOT NULL THEN
+                            RAISE EXCEPTION
+                                'docpipe-ci-b4-targeted-commit-failure';
+                        END IF;
+                        RETURN NULL;
+                    END;
+                    $$"""
+                )
+            )
+            connection.execute(
+                text(
+                    f"""CREATE CONSTRAINT TRIGGER {trigger_name}
+                    AFTER UPDATE ON outbox_events
+                    DEFERRABLE INITIALLY DEFERRED
+                    FOR EACH ROW
+                    EXECUTE FUNCTION {function_name}()"""
+                )
+            )
+        trigger_installed = True
+        _compose('start', 'worker')
+        exit_code = _wait_worker_exited()
+        assert exit_code != 0
+        worker_logs = _compose('logs', '--no-color', '--tail', '150', 'worker')
+        assert 'docpipe-ci-b4-targeted-commit-failure' in worker_logs
+
+        properties, first_payload = _message_from_queue(
+            stack.channel, queue_name
+        )
+        assert properties.message_id == str(event.id)
+        assert properties.correlation_id == original_payload['correlation_id']
+        assert first_payload == original_payload
+        with Session(stack.engine) as session:
+            rolled_back_document, rolled_back_event = _document_and_event(
+                session, document_id
+            )
+            document_count = session.scalar(
+                select(func.count())
+                .select_from(DocumentModel)
+                .where(DocumentModel.id == document_id)
+            )
+            event_count = session.scalar(
+                select(func.count())
+                .select_from(OutboxEventModel)
+                .where(OutboxEventModel.id == event.id)
+            )
+        assert rolled_back_document.status == 'STORED'
+        assert rolled_back_document.updated_at == document.updated_at
+        assert rolled_back_event.published_at is None
+        assert rolled_back_event.id == event.id
+        assert rolled_back_event.payload == original_payload
+        assert rolled_back_event.attempts == event.attempts == 0
+        assert rolled_back_event.last_error is None
+        assert rolled_back_event.next_attempt_at is None
+        assert document_count == 1
+        assert event_count == 1
+
+    finally:
+        if trigger_installed:
+            with stack.engine.begin() as connection:
+                connection.execute(
+                    text(
+                        f'DROP TRIGGER IF EXISTS {trigger_name} '
+                        'ON outbox_events'
+                    )
+                )
+                connection.execute(
+                    text(f'DROP FUNCTION IF EXISTS {function_name}()')
+                )
+
+    try:
+        _start_worker()
+        _wait_published(stack.engine, document_id)
+        second_properties, second_payload = _message_from_queue(
+            stack.channel, queue_name
+        )
+        assert second_properties.message_id == str(event.id)
+        assert (
+            second_properties.correlation_id
+            == original_payload['correlation_id']
+        )
+        assert second_payload == original_payload
+        with Session(stack.engine) as session:
+            recovered_document, recovered_event = _document_and_event(
+                session, document_id
+            )
+            assert recovered_document.status == 'PUBLISHED'
+            assert recovered_event.published_at is not None
+            assert recovered_event.id == event.id
+            assert recovered_event.payload == original_payload
+            assert recovered_event.attempts == 1
+            assert recovered_event.last_error is None
+            assert recovered_event.next_attempt_at is None
+            assert (
+                session.scalar(
+                    select(func.count())
+                    .select_from(DocumentModel)
+                    .where(DocumentModel.id == document_id)
+                )
+                == 1
+            )
+            assert (
+                session.scalar(
+                    select(func.count())
+                    .select_from(OutboxEventModel)
+                    .where(OutboxEventModel.aggregate_id == document_id)
+                )
+                == 1
+            )
+    finally:
+        if stack.channel.is_open:
+            stack.channel.queue_delete(queue=queue_name)
+
+
 def _recreate_stack_and_verify_persistence(
     stack: PackagedStack,
     persisted_ids: list[UUID],
@@ -858,10 +1178,28 @@ def test_packaged_compose_flow_failure_recovery_requeue_and_restart() -> None:
         _wait_http_status(
             f'{_required("CI_API_URL")}/health/ready', HTTPStatus.OK
         )
+        scenario = os.environ.get('DOCPIPE_PACKAGED_SCENARIO')
+        if scenario == 'b2':
+            document_id = _post_document(
+                'b2-baseline.pdf', 'application/pdf', _FORMATS[0][2]
+            )
+            _start_worker()
+            _wait_published(stack.engine, document_id)
+            record = _record_for_document(stack.engine, document_id)
+            _verify_expected_messages(stack, [record])
+            _verify_azurite_outage_recovery(stack, document_id)
+            _verify_postgresql_outage_recovery(stack)
+            return
+        if scenario == 'b4':
+            _start_worker()
+            _verify_confirmed_publish_commit_failure(stack)
+            return
         accepted = _submit_files(stack)
         _verify_initial_publication(stack, accepted)
         recovered_ids = _verify_channel_recovery(stack)
         requeued_id = _verify_requeue(stack)
+        _verify_azurite_outage_recovery(stack, accepted[0][0])
+        _verify_postgresql_outage_recovery(stack)
         _compose('stop', 'worker')
         pending_restart_id = _post_document(
             'restart.pdf', 'application/pdf', _FORMATS[0][2]
@@ -882,5 +1220,6 @@ def test_packaged_compose_flow_failure_recovery_requeue_and_restart() -> None:
             pending_restart_id,
             orphan_key,
         )
+        _verify_confirmed_publish_commit_failure(stack)
     finally:
         _close_stack(stack)
