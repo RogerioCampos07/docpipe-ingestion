@@ -194,3 +194,85 @@ Não há tag local de `v1.0.0`; não foi consultado o inventário remoto de tags
 A 10b decidirá a versão candidata, fechará B1–B6 e executará os gates sobre
 sua revisão final. A confirmação do usuário precede tag e publicação. Nenhuma
 campanha acadêmica, conta Azure, Kubernetes ou Processing entra nessa lista.
+
+## Continuação da 10b — bloco 1: dependências e versão
+
+Esta seção acrescenta resultados à auditoria 10a acima, sem alterar suas
+classificações históricas. A base inicial do bloco foi
+`08df9744bf3ef98a4df077a5d7cf511ae319a7fb`, na branch
+`release/phase-10b-v1.0.0`, com árvore limpa. Os resultados abaixo pertencem
+à árvore de trabalho modificada a partir dessa base, ainda sem commit; não
+foram produzidos pelo SHA limpo. Consulta e validação: **03/10/2026 UTC**.
+
+### B5 — inventário e consulta de advisories de pacotes
+
+`uv.lock` contém 97 entradas: o projeto, 50 pacotes runtime efetivos em
+Python 3.14/Linux x86_64 GNU, 42 exclusivos do grupo de desenvolvimento
+nessa plataforma e quatro dependências condicionais de outras plataformas.
+Os 50 runtime são 15 diretos e 35 transitivos. O grupo de desenvolvimento
+possui oito dependências diretas e 54 pacotes na sua árvore, dos quais 12
+também integram a árvore runtime. Os comandos de inventário foram:
+
+```bash
+uv tree --locked --no-dev --python-version 3.14 --python-platform x86_64-unknown-linux-gnu
+uv tree --locked --only-dev --python-version 3.14 --python-platform x86_64-unknown-linux-gnu
+```
+
+O lockfile preserva a versão exata de cada pacote.
+
+| Grupo | Versões diretas ou condicionais verificadas no lockfile |
+| --- | --- |
+| Runtime direto (15) | `alembic==1.20.0`, `azure-storage-blob==12.30.2`, `fastapi==0.141.1`, `opentelemetry-api==1.44.0`, `opentelemetry-exporter-otlp-proto-http==1.44.0`, `opentelemetry-instrumentation-fastapi==0.65b0`, `opentelemetry-sdk==1.44.0`, `pika==1.4.4`, `prometheus-client==0.26.0`, `psycopg==3.3.5` com extra `binary`, `pydantic==2.13.5`, `pydantic-settings==2.15.0`, `python-multipart==0.0.32`, `sqlalchemy==2.0.54`, `uvicorn==0.53.0` |
+| Desenvolvimento direto (8) | `httpx2==2.13.0`, `locust==2.46.6`, `mypy==2.3.1`, `pytest==9.1.1`, `pytest-cov==7.1.0`, `ruff==0.16.2`, `taskipy==1.14.1`, `typos==1.49.0` |
+| Condicionais ausentes das árvores Linux (4) | `httpx2-jsfetch==1.0`, `mslex==1.3.0`, `pywin32==312`, `tzdata==2026.4` |
+
+Fonte atual: campo `vulnerabilities` da
+[API JSON por versão do PyPI](https://pypi.org/pypi/urllib3/2.8.0/json),
+alimentado por OSV. As consultas HTTP retornaram `200` para **todos os 96
+pacotes externos do lockfile**: 50 runtime efetivos, 42 exclusivos de
+desenvolvimento e quatro condicionais. O campo veio vazio para essas versões.
+Uma versão antiga conhecida de `urllib3` foi consultada separadamente e
+retornou advisories, confirmando que a consulta não ignora esse campo. Os
+registros por pacote e versão ficaram também em
+`/tmp/docpipe-phase10b-block1-20261003/`; o inventário versionado pode ser
+reconstituído pelos comandos acima e por `uv.lock`.
+
+A [API pública de advisories do GitHub](https://docs.github.com/en/rest/security-advisories/global-advisories) respondeu `200`, com `ecosystem=pip` e `affects=nome@versão`, para os cinco itens não concluídos na 10a: `typing-extensions==4.16.0`, `typing-inspection==0.4.4`, `tzdata==2026.4`, `urllib3==2.8.0` e `wrapt==2.4.1`. Nenhum advisory aplicável foi retornado. `tzdata` está no lockfile, mas não é instalado na árvore runtime Linux avaliada. As 45 consultas anteriores do GitHub pertencem à 10a, em 02/10/2026; a consulta atual do PyPI cobre novamente suas versões.
+
+**Resultado deste bloco:** nenhum alerta aplicável foi confirmado para os
+pacotes consultados; não houve atualização de dependência. O resultado não
+prova ausência absoluta de vulnerabilidades. **B5 permanece aberto**: falta
+inventariar digests, componentes e advisories das imagens efetivamente
+entregues. As referências declaradas, ainda não avaliadas neste bloco, são
+`python:3.14-slim-bookworm`, `ghcr.io/astral-sh/uv:0.9.26`,
+`postgres:17.6-bookworm`, `rabbitmq:4.1.4-management` e
+`mcr.microsoft.com/azure-storage/azurite:3.37.0`. A imagem final e eventuais
+alertas novos serão examinados no bloco 4. Nenhuma imagem foi construída ou
+inspecionada neste bloco. O backend de build `uv_build` e o binário uv da
+imagem também serão considerados na avaliação do artefato final.
+
+### B6 — versão da candidata
+
+`uv version 1.0.0 --no-sync` atualizou somente a versão do projeto em
+`pyproject.toml` e `uv.lock`, de `0.1.0` para `1.0.0`; a revisão do diff não
+encontrou alterações nas versões das dependências. O comando de sincronização
+da tabela abaixo instalou o projeto `1.0.0` usando o lockfile. A versão
+OpenAPI já era `1.0.0` e permaneceu assim. Um teste direcionado agora compara
+o OpenAPI aos metadados do pacote instalado e ao alvo `1.0.0`. Uma consulta
+independente confirmou `pyproject=lock=instalado=OpenAPI=1.0.0`. O prefixo
+`/v1` e o contrato `document.received.v1` não foram modificados.
+
+| Verificação sobre a árvore modificada | Resultado |
+| --- | --- |
+| `uv sync --locked --group dev` | Exit `0`; projeto `1.0.0` instalado |
+| `uv run --locked --no-sync pytest tests/api/test_openapi.py -ra -vv` | Exit `0`; um teste aprovado, sem falhas ou skips |
+| `uv run --locked --no-sync task lint` | Exit `0` |
+| `uv run --locked --no-sync task format-check` | Exit `0` |
+| `uv run --locked --no-sync task typecheck` | Exit `0`; 99 arquivos sem erros |
+| `uv run --locked --no-sync typos` | Exit `0`; Markdown é excluído pela configuração atual |
+| `uv version --short --locked` e `git diff --check` | Exit `0` em ambos |
+
+**B6 está alinhado e validado nesta árvore de trabalho**, ainda sem commit.
+Os gates da candidata final, o build da imagem com esses metadados e os checks
+reais de PR/main permanecem para os blocos posteriores. Este bloco não
+executou a suíte completa, integrações ou testes packaged.
