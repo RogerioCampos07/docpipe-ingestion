@@ -171,6 +171,12 @@ connection string ou credencial. O RabbitMQ não participa da readiness da API
 porque a outbox preserva eventos aceitos. A readiness do worker exige conexão
 com PostgreSQL e canal RabbitMQ utilizável para publicar.
 
+O arquivo enviado tem limite padrão de 10 MiB
+(`DOCPIPE_INGESTION_MAX_FILE_SIZE_BYTES`). O corpo total do `POST`, incluindo
+o envelope multipart, pode usar até 64 KiB adicionais. Ambos os limites
+produzem `413` quando excedidos; o limite do corpo é verificado durante a
+leitura, inclusive sem `Content-Length` confiável.
+
 ## Instrumentação e telemetria
 
 API e worker emitem logs JSON com `correlation_id`, `trace_id` e `span_id`.

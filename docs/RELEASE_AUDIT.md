@@ -276,3 +276,52 @@ independente confirmou `pyproject=lock=instalado=OpenAPI=1.0.0`. O prefixo
 Os gates da candidata final, o build da imagem com esses metadados e os checks
 reais de PR/main permanecem para os blocos posteriores. Este bloco não
 executou a suíte completa, integrações ou testes packaged.
+
+## Continuação da 10b — bloco 2: limite HTTP antes do parse
+
+Esta seção acrescenta evidências a B1 sem alterar a classificação histórica
+da auditoria 10a. A base inicial foi
+`89b36e6ba8eccb4bddefc44b6c86a53deceec27c`, em
+`release/phase-10b-v1.0.0`, com três linhas preexistentes e preservadas em
+`tests/api/test_openapi.py`. Os resultados abaixo são da árvore de trabalho
+modificada a partir dessa base, **não** do commit limpo. Data: 03/10/2026 UTC.
+
+A rota de `POST /v1/documents` agora envolve o `receive` usado pelo handler
+do FastAPI antes de seu `request.form()`. O corpo total pode ter até
+`DOCPIPE_INGESTION_MAX_FILE_SIZE_BYTES + 65.536` bytes: por padrão, 10 MiB
+para o arquivo e 64 KiB para o envelope multipart. O limite do arquivo
+permanece independente no caso de uso. Um `Content-Length` válido acima do
+total permite rejeição sem ler o corpo; em todos os demais casos, os bytes
+ASGI recebidos são contados e o chunk que ultrapassa o total não é entregue
+ao parser. Nenhum corpo completo é acumulado pela proteção. A resposta
+preserva `413`, JSON com `file_too_large`, `X-Correlation-ID` e contadores de
+rejeição. A margem comportou uploads válidos nos limites exatos dos testes;
+corpos com overhead excessivo são rejeitados mesmo que o arquivo seja menor
+que seu próprio limite.
+
+Um teste inicial encontrou aceitação `202` de multipart truncado após um
+delimitador intermediário. O parser fixado no lockfile não valida o estado
+final em `finalize()`. A rota passou a conferir incrementalmente a presença
+do delimitador de fechamento antes de permitir que o parse termine; a
+requisição truncada agora recebe `400`. O estado guardado tem tamanho limitado
+pelo delimitador, inclusive quando ele se divide entre chunks.
+
+O teste ASGI percorre a aplicação FastAPI completa. Ao exceder o limite após
+mais de 1 MiB já gravado em arquivo temporário, confirmou que apenas o
+primeiro chunk chegou ao parser, que o arquivo foi fechado e que o caso de
+uso não executou. A integração local, com SQLite e armazenamento temporário
+explicitamente selecionados para a fixture, confirmou zero blob, documento,
+outbox e arquivo `.part` após `413` por excesso do corpo. Esses resultados
+não substituem a prova operacional PostgreSQL/Azurite na imagem.
+
+| Verificação sobre a árvore modificada | Resultado |
+| --- | --- |
+| `uv run --locked --no-sync pytest tests/api/test_body_limit.py -ra -q` (antes da correção do truncamento) | Exit `1`: oito passaram; um mostrou `202` indevido |
+| Teste dirigido do multipart truncado após a correção | Exit `0`: dois passaram |
+| `uv run --locked --no-sync pytest tests/api/test_documents.py tests/api/test_body_limit.py tests/api/test_health.py tests/application/test_file_validation.py tests/infrastructure/test_observability.py tests/integration/test_documents_api.py -ra -q` | Exit `0`: 66 passaram, sem skips ou falhas |
+| `uv run --locked --no-sync task lint`, `task format-check`, `task typecheck`, `typos` | Exit `0` após ajustes de estilo/tipos; `typos` não examina Markdown |
+| `git diff --check` | Exit `0`; os dois arquivos novos também não geraram diagnósticos de whitespace na inspeção separada |
+
+**B1 permanece parcial**: falta comprovar `413`, limpeza e ausência de
+efeitos por HTTP real na imagem entregue, no bloco 4. Também ficam para os
+gates finais da candidata a suíte/cobertura completa e os checks reais de PR.
