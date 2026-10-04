@@ -452,3 +452,132 @@ foi local e empacotada; não é resultado de GitHub Actions nem de um commit
 final de release. B1 permanece parcial até a prova de limite HTTP real
 definida para o 4B; B5 continua aberto para a revisão final da imagem e das
 imagens de serviço no 4B.
+
+## Continuação da 10b — subbloco 4B: HTTP empacotado e revisão de imagens
+
+Revisão avaliada: `8c4c4870f7d762e5638206cf557155fd095940e2`, na branch
+`release/phase-10b-v1.0.0`. A árvore contém alterações não commitadas em
+`tests/api/test_openapi.py` (alinhamento OpenAPI/pacote, preservado) e
+`tests/integration/test_packaged_compose.py` (harness HTTP empacotado e
+seleção de healthcheck/recuperação RabbitMQ). Nenhum arquivo de runtime,
+Dockerfile, Compose ou lockfile foi alterado no subbloco. Portanto, os
+resultados abaixo pertencem à árvore de trabalho identificada, e não ao SHA
+limpo. Revisão de fontes e inventários: **04/10/2026 UTC**.
+
+### B1 — limite de corpo em HTTP real
+
+O harness adicionou chamadas TCP HTTP ao serviço API executado na stack
+Compose isolada, sem usar `TestClient` para esta prova. A imagem da API e do
+worker foi `docpipe-ingestion:phase10b-4a-d37fd3a-worktree`, imagem candidata
+local ID/digest `sha256:355c08b8d2498ae6b844ab242a48c2cb9e31534863f02233007b3be81f1b553c`.
+Ela contém o runtime B1; a inspeção do diff confirma que a única mudança de
+código nesta árvore é no harness, não na aplicação empacotada.
+
+Primeiro, um PDF válido foi enviado por `POST /v1/documents`; a resposta foi
+aceita, o worker publicou seu evento, o estado persistido chegou a
+`PUBLISHED`, o blob correspondeu aos bytes enviados e a mensagem observada
+conservou os identificadores/payload esperados. Em seguida, o harness tirou
+um snapshot dos totais de documentos e outbox, nomes de blobs e marcadores
+`_uploads/`. Uma requisição cujo `Content-Length` declarava corpo acima do
+limite e outra enviada com `Transfer-Encoding: chunked`, sem
+`Content-Length`, ultrapassaram `MAX_FILE_SIZE + 64 KiB`. Ambas receberam
+`413`, JSON com `error.code=file_too_large`, correlation ID no JSON e no
+`X-Correlation-ID`. Os quatro conjuntos de estado permaneceram idênticos ao
+snapshot depois de cada rejeição: nenhum documento, evento, blob ou marcador
+foi criado. O teste local ASGI da seção do bloco 2 comprova fechamento do
+temporário após exceder o limite; o filesystem temporário interno não é
+observável pela interface HTTP empacotada e não foi inferido pela ausência
+de efeitos externos.
+
+| Verificação na árvore de trabalho acima | Resultado |
+| --- | --- |
+| Teste dirigido `DOCPIPE_PACKAGED_SCENARIO=b1` | Exit `0`: um teste aprovado, sem skip; JUnit dirigido aceito exigindo `tests.integration.test_packaged_compose=1` |
+| Regressões HTTP, limite, validação e observabilidade | Exit `0`: 66 aprovados, zero falhas e skips |
+| Gate packaged final `tests/integration/test_packaged_compose.py -m packaged` | Exit `0`: um teste aprovado em 641,02 s, sem skip; incluiu o fluxo B1; JUnit final aceito exigindo o módulo e um caso |
+| `task lint`, `task format-check`, `task typecheck`, `typos`, `git diff --check` | Exit `0` após as alterações finais; typecheck reexecutado nesta consolidação: 102 arquivos sem erros |
+
+Tentativas intermediárias do harness tiveram falhas por porta antiga, fila
+com mensagem residual e corrida de inicialização do RabbitMQ ao ler
+`.erlang.cookie`. Foram corrigidas no harness com seleção da porta configurada,
+fila limpa/isolada e recuperação limitada que só prossegue após o erro
+específico, healthcheck saudável e conexão AMQP real. A execução final em
+stack limpa passou. Os arquivos JUnit usados estão em `/tmp` e são
+temporários; os resultados, identidade da imagem e escopo ficam registrados
+neste relatório. **B1 está comprovado nesta árvore**, inclusive por HTTP real
+na imagem candidata e sem efeitos persistidos da rejeição.
+
+### B5 — imagens e componentes efetivamente entregues
+
+O inventário foi feito sobre imagens locais por ID/digest e sobre os pacotes
+instalados nas imagens. As referências e fontes consultadas foram:
+
+| Componente e referência Compose/build | Digest local avaliado | Inventário/versões observadas | Fonte oficial consultada e avaliação |
+| --- | --- | --- | --- |
+| API/worker `docpipe-ingestion:phase10b-4a-d37fd3a-worktree` | `sha256:355c08b8d2498ae6b844ab242a48c2cb9e31534863f02233007b3be81f1b553c` | Debian 12 Bookworm; 97 pacotes dpkg; Python 3.14.8; dependências runtime Python conforme `uv.lock`; binário uv 0.9.26 permanece na imagem | Debian Security Tracker JSON consultado em 04/10; ver abaixo. Tag base `python:3.14-slim-bookworm` e `ghcr.io/astral-sh/uv:0.9.26` tiveram os manifests oficiais consultados previamente, com digest de índice e plataforma amd64 registrados nos resultados locais. O upstream uv publica releases posteriores (0.12.23 em 03/10); não foi confirmado advisory aplicável ao 0.9.26, mas não houve scanner de binários. |
+| PostgreSQL `postgres:17.6-bookworm` | `sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3` | Debian 12; 144 pacotes dpkg; PostgreSQL e client `17.6-2.pgdg12+1`; libc6 `2.36-9+deb12u13`; OpenSSL `3.0.17-1~deb12u3` | Debian Security Tracker e release notes oficiais do PostgreSQL `REL_17_STABLE`. Os releases 17.7+ registram correções CVE, incluindo CVE-2025-12818 em libpq; a imagem também contém cliente, portanto o alerta exige triagem da utilização/ameaça, embora o serviço Compose execute como servidor e o Ingestion não use `psql`. A série está em 17.11 (13/08/2026); 17.6 é anterior aos patches e requer revisão antes de considerar a imagem sem alertas. |
+| RabbitMQ `rabbitmq:4.1.4-management` | `sha256:294b01e1796a8acede4619f32a1c394fae1f8021e57986ea01aad38dc2a4f502` | Ubuntu 24.04.3 Noble; 110 pacotes dpkg; RabbitMQ 4.1.4; OpenSSL 3.0.13-0ubuntu3.6; OTP 27 | Releases oficiais de `rabbitmq/rabbitmq-server`: 4.1.4 publicado em 02/09/2025 e última manutenção 4.1.x visível 4.1.8 em 22/01/2026; 4.3.6 publicado em 14/09/2026. A página de suporte do publicador respondeu HTTP 403, então EOL/suporte formal não pôde ser confirmado. Não foi executado correlacionador CVE para o inventário Ubuntu, e nenhuma conclusão de ausência de vulnerabilidade é feita. |
+| Azurite `mcr.microsoft.com/azure-storage/azurite:3.37.0` | `sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5` | Alpine 3.23.5; inventário apk local disponível; musl 1.2.5-r23; OpenSSL 3.5.7-r0; Node.js 22.23.2, conforme inventário registrado | Release oficial `Azure/Azurite` v3.37.0, de 26/08. Release 3.36.0 declara atualização da base para Alpine 3.23 e correções de CVEs críticos/de dependências. O índice de pacotes Alpine v3.23 foi consultado em 04/10 (main atualizado 03/10), mas a API oficial `secdb.alpinelinux.org` respondeu 403 e o repositório público `alpinelinux/alpine-secdb` não contém v3.23. Não foi possível correlacionar integralmente cada pacote instalado à secdb da versão. |
+
+As referências declaradas correspondem às imagens Compose efetivamente
+iniciadas pelo cenário packaged; API e worker compartilham a imagem DocPipe.
+Os manifests foram consultados por `docker buildx imagetools inspect` e os
+digests locais confirmados por `docker image inspect`. O Docker Scout não está
+instalado (`docker: unknown command: docker scout`); Trivy, Grype e Syft
+também não estão disponíveis. Nenhuma dependência ou imagem foi atualizada
+neste subbloco.
+
+Para dependências Python, mantém-se a revisão do bloco 1: 96 pacotes externos
+no lockfile consultados no PyPI, incluindo os cinco restantes do levantamento
+10a, sem advisory retornado pelas fontes consultadas; isso não prova ausência
+absoluta. Nenhuma mudança em `pyproject.toml` ou `uv.lock` ocorreu depois
+daquela revisão.
+
+O Debian Tracker respondeu com seu conjunto JSON integral. O cruzamento
+nominal do inventário Debian das imagens da aplicação e PostgreSQL produziu
+entradas `open`/`undetermined` para investigação, não uma lista de
+vulnerabilidades confirmadas: algumas descrições têm versão upstream sem
+considerar backports Debian, outras afetam utilitários/extensões ou modos não
+usados, e o formato do tracker não substitui um scanner que compare cada
+pacote binário à distribuição. O PostgreSQL antigo também contém alertas
+upstream corrigidos em versões posteriores; a aplicabilidade e a decisão de
+atualizar o patch precisam ser registradas antes do fechamento. Para Ubuntu
+Noble, a consulta integral por pacote/imagem ainda não foi completada; para
+Alpine, a secdb exata não foi acessível. Assim, não há vulnerabilidade
+aplicável confirmada nesta revisão, mas também não há base para declarar as
+imagens sem vulnerabilidades.
+
+Fontes verificáveis consultadas em 04/10/2026:
+
+- [Debian Security Tracker — dados JSON](https://security-tracker.debian.org/tracker/data/json)
+- [PostgreSQL 17 release notes no repositório oficial](https://github.com/postgres/postgres/blob/REL_17_STABLE/doc/src/sgml/release-17.sgml)
+- [RabbitMQ releases oficiais](https://github.com/rabbitmq/rabbitmq-server/releases)
+- [Ubuntu Security Notices por Noble](https://ubuntu.com/security/notices.json?release=noble) — feed acessível, mas não houve correlação completa por pacote nesta execução
+- [Alpine v3.23 APKINDEX oficial](https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz)
+- [Azurite releases oficiais](https://github.com/Azure/Azurite/releases)
+- [uv releases oficiais](https://github.com/astral-sh/uv/releases)
+
+**B5 permanece parcial e bloqueia o fechamento da release:** falta completar
+a correlação de advisories com versões/aplicabilidade para os inventários
+Debian, Ubuntu/Noble e Alpine da imagem final e documentar a decisão sobre
+alertas pertinentes, em particular a idade da imagem PostgreSQL 17.6. Nenhum
+alerta foi convertido em vulnerabilidade aplicável confirmada sem evidência;
+nenhum patch foi aplicado porque esta verificação não confirmou ainda uma
+vulnerabilidade aplicável ao uso contratado. A revisão das imagens está
+identificada por digest e limitada às imagens efetivamente utilizadas; não
+houve atualização de tags nem fixação de digests no Compose.
+
+### Situação dos bloqueadores após o subbloco 4B
+
+| Bloqueador | Estado na árvore avaliada | Evidência/limitação |
+| --- | --- | --- |
+| B1 | **Resolvido** | Upload aceito e publicado; corpo declarado acima do limite e envio chunked sem comprimento recebem `413`; JSON/correlation corretos e sem mudança nos contadores, blobs ou marcadores; prova packaged final aprovada. |
+| B2 | **Resolvido** | Indisponibilidade e recuperação reais de PostgreSQL/Azurite, integridade, reconciliação do blob órfão e retomada registrados no 4A. |
+| B3 | **Resolvido** | Três provas determinísticas com PostgreSQL/RabbitMQ reais, incluindo observação de lock e rejeição do reenvio antigo, registradas no bloco 3. |
+| B4 | **Resolvido** | Confirm real seguido de falha de commit, rollback e repetição do mesmo evento no 4A; entrega permanece pelo menos uma vez. |
+| B5 | **Parcial — bloqueador aberto** | Digests e inventários registrados, mas correlação/aplicabilidade de alertas dos pacotes OS e avaliação equivalente sem scanner não foram concluídas; nenhum advisory aplicável foi confirmado. |
+| B6 | **Resolvido** | Pacote, lockfile e OpenAPI em 1.0.0; `/v1` e `document.received.v1` preservados. |
+
+As verificações neste subbloco são locais, contra a árvore modificada e a
+imagem identificada. Não são checks de PR nem validação do commit final da
+`main`. O fechamento da release e a criação/publicação de tag continuam
+dependentes dos gates posteriores e da autorização específica do usuário.
