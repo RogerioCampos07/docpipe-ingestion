@@ -1,6 +1,7 @@
 """Exercise the built image against an isolated official Compose stack."""
 
 import hashlib
+import http.client
 import json
 import os
 import subprocess
@@ -10,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from uuid import UUID, uuid4
 
@@ -27,6 +29,7 @@ from docpipe_ingestion.infrastructure.database.models import (
     DocumentModel,
     OutboxEventModel,
 )
+from docpipe_ingestion.infrastructure.settings import Settings
 
 pytestmark = [
     pytest.mark.packaged,
@@ -45,6 +48,10 @@ _MAX_ATTEMPTS = 5
 _PERSISTENT_DELIVERY_MODE = 2
 _REJECTED_UPLOAD_MARKERS = 2
 _RABBITMQ_CONNECT_TIMEOUT_SECONDS = 45
+_MAX_FILE_SIZE_BYTES = int(
+    Settings.model_fields['max_file_size_bytes'].default
+)
+_MAX_REQUEST_BODY_BYTES = _MAX_FILE_SIZE_BYTES + 64 * 1024
 
 
 @dataclass
@@ -184,6 +191,188 @@ def _post_document_response(
             return response.status, response.read()
     except HTTPError as error:
         return error.code, error.read()
+
+
+def _post_multipart_http(
+    body_chunks: list[bytes],
+    *,
+    boundary: str,
+    correlation_id: UUID,
+    chunked: bool,
+    declared_length: int | None = None,
+) -> tuple[int, dict[str, str], bytes]:
+    api = urlsplit(_required('CI_API_URL'))
+    assert api.hostname is not None
+    connection = http.client.HTTPConnection(
+        api.hostname, api.port or 80, timeout=60
+    )
+    try:
+        connection.putrequest('POST', '/v1/documents')
+        connection.putheader(
+            'Content-Type', f'multipart/form-data; boundary={boundary}'
+        )
+        connection.putheader('X-Correlation-ID', str(correlation_id))
+        connection.putheader('Connection', 'close')
+        if chunked:
+            connection.putheader('Transfer-Encoding', 'chunked')
+        else:
+            connection.putheader(
+                'Content-Length',
+                str(
+                    declared_length
+                    if declared_length is not None
+                    else sum(map(len, body_chunks))
+                ),
+            )
+        connection.endheaders()
+        for body_chunk in body_chunks:
+            if chunked:
+                connection.send(f'{len(body_chunk):X}\r\n'.encode())
+                connection.send(body_chunk)
+                connection.send(b'\r\n')
+            else:
+                connection.send(body_chunk)
+        response = connection.getresponse()
+        response_headers = {
+            name.lower(): value for name, value in response.getheaders()
+        }
+        return response.status, response_headers, response.read()
+    finally:
+        connection.close()
+
+
+def _document_outbox_counts(engine: Engine) -> tuple[int, int]:
+    with Session(engine) as session:
+        document_count = session.scalar(
+            select(func.count()).select_from(DocumentModel)
+        )
+        event_count = session.scalar(
+            select(func.count()).select_from(OutboxEventModel)
+        )
+    assert document_count is not None
+    assert event_count is not None
+    return document_count, event_count
+
+
+def _assert_body_limit_response(
+    status: int,
+    headers: dict[str, str],
+    response_body: bytes,
+    correlation_id: UUID,
+) -> None:
+    payload = json.loads(response_body)
+    assert status == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+    assert payload['error']['code'] == 'file_too_large'
+    assert payload['error']['correlation_id'] == str(correlation_id)
+    assert headers['x-correlation-id'] == str(correlation_id)
+
+
+def _body_limit_side_effect_snapshot(
+    stack: PackagedStack,
+) -> tuple[tuple[int, int], set[str], set[str]]:
+    return (
+        _document_outbox_counts(stack.engine),
+        {item.name for item in stack.container.list_blobs()},
+        {
+            item.name
+            for item in stack.container.list_blobs(
+                name_starts_with='_uploads/'
+            )
+        },
+    )
+
+
+def _assert_body_limit_side_effects_unchanged(
+    stack: PackagedStack,
+    snapshot: tuple[tuple[int, int], set[str], set[str]],
+) -> None:
+    counts, blobs, markers = snapshot
+    assert _document_outbox_counts(stack.engine) == counts
+    assert {item.name for item in stack.container.list_blobs()} == blobs
+    assert {
+        item.name
+        for item in stack.container.list_blobs(name_starts_with='_uploads/')
+    } == markers
+
+
+def _body_limit_multipart(boundary: str) -> tuple[bytes, int]:
+    multipart = b''.join((
+        f'--{boundary}\r\n'.encode(),
+        b'Content-Disposition: form-data; name="file"; '
+        b'filename="small.pdf"\r\n',
+        b'Content-Type: application/pdf\r\n\r\n',
+        _FORMATS[0][2],
+        f'\r\n--{boundary}--\r\n'.encode(),
+    ))
+    assert len(multipart) < _MAX_REQUEST_BODY_BYTES
+    overflow = _MAX_REQUEST_BODY_BYTES + 1 - len(multipart)
+    return multipart, overflow
+
+
+def _send_oversized_body_request(
+    boundary: str,
+    *,
+    chunked: bool,
+    correlation_id: UUID,
+) -> tuple[int, dict[str, str], bytes]:
+    multipart, overflow = _body_limit_multipart(boundary)
+    if chunked:
+        padding = b'x' * overflow
+        body_chunks = [multipart]
+        body_chunks.extend(
+            padding[offset : offset + 64 * 1024]
+            for offset in range(0, len(padding), 64 * 1024)
+        )
+        declared_length = None
+    else:
+        body_chunks = [multipart]
+        declared_length = _MAX_REQUEST_BODY_BYTES + 1
+    return _post_multipart_http(
+        body_chunks,
+        boundary=boundary,
+        correlation_id=correlation_id,
+        chunked=chunked,
+        declared_length=declared_length,
+    )
+
+
+def _verify_packaged_http_body_limit(stack: PackagedStack) -> None:
+    _start_worker()
+    accepted_id = _post_document(
+        'body-limit-valid.pdf', 'application/pdf', _FORMATS[0][2]
+    )
+    _wait_published(stack.engine, accepted_id)
+    accepted_document, accepted_event = _record_for_document(
+        stack.engine, accepted_id
+    )
+    assert accepted_document.status == 'PUBLISHED'
+    assert accepted_event.published_at is not None
+    assert (
+        stack.container
+        .get_blob_client(accepted_document.storage_key)
+        .download_blob()
+        .readall()
+        == _FORMATS[0][2]
+    )
+    stack, accepted_records = _refresh_rabbit_and_collect_records(
+        stack, [(accepted_document, accepted_event)]
+    )
+    _verify_expected_messages(stack, accepted_records)
+
+    snapshot = _body_limit_side_effect_snapshot(stack)
+    boundary = f'docpipe-{uuid4().hex}'
+    correlation_id = uuid4()
+    response = _send_oversized_body_request(
+        boundary, chunked=False, correlation_id=correlation_id
+    )
+    _assert_body_limit_response(*response, correlation_id)
+    _assert_body_limit_side_effects_unchanged(stack, snapshot)
+    correlation_id = uuid4()
+    response = _send_oversized_body_request(
+        boundary, chunked=True, correlation_id=correlation_id
+    )
+    _assert_body_limit_response(*response, correlation_id)
+    _assert_body_limit_side_effects_unchanged(stack, snapshot)
 
 
 def _post_document(
@@ -396,7 +585,46 @@ def _start_worker() -> None:
         '120',
         'worker',
     )
-    _wait_http_status('http://127.0.0.1:19001/health/ready', 200)
+    _wait_http_status(_worker_health_url(), HTTPStatus.OK)
+
+
+def _worker_health_url() -> str:
+    worker_port = os.environ.get('WORKER_METRICS_PORT', '19001')
+    return f'http://127.0.0.1:{worker_port}/health/ready'
+
+
+def _wait_rabbitmq_recovered_after_cookie_race() -> None:
+    logs = _compose('logs', '--no-color', '--tail', '150', 'rabbitmq')
+    cookie_error = (
+        'Error when reading /var/lib/rabbitmq/.erlang.cookie: eacces'
+    )
+    if cookie_error not in logs:
+        raise AssertionError(
+            'RabbitMQ failed to become healthy without the known cookie '
+            f'initialization error; recent logs:\n{logs}'
+        )
+
+    deadline = time.monotonic() + 150
+    while time.monotonic() < deadline:
+        container_id = _compose('ps', '-q', 'rabbitmq')
+        if container_id:
+            health = _docker(
+                'inspect',
+                '--format',
+                '{{.State.Health.Status}}',
+                container_id,
+            )
+            if health == 'healthy':
+                connection = _open_rabbitmq()
+                _close_rabbitmq(connection)
+                return
+        time.sleep(1)
+
+    logs = _compose('logs', '--no-color', '--tail', '150', 'rabbitmq')
+    raise AssertionError(
+        'RabbitMQ did not recover from the cookie initialization error; '
+        f'recent logs:\n{logs}'
+    )
 
 
 def _verify_image_container(service: str, image_id: str) -> None:
@@ -651,7 +879,7 @@ def _verify_channel_recovery(stack: PackagedStack) -> list[UUID]:
     stack.channel = stack.rabbit.channel()
     _set_next_attempt(stack.engine, recover_event.id, None)
     _compose('start', 'worker')
-    _wait_http_status('http://127.0.0.1:19001/health/ready', HTTPStatus.OK)
+    _wait_http_status(_worker_health_url(), HTTPStatus.OK)
     for document_id in (recover_id, broker_down_id):
         _wait_published(stack.engine, document_id)
     records = [
@@ -686,7 +914,7 @@ def _verify_requeue(stack: PackagedStack) -> UUID:
     exhausted = _wait_exhausted(stack.engine, event_id)
     assert exhausted.last_error == 'BrokerPublishError'
     exhausted_error = exhausted.last_error
-    _wait_http_status('http://127.0.0.1:19001/health/ready', HTTPStatus.OK)
+    _wait_http_status(_worker_health_url(), HTTPStatus.OK)
     _compose('stop', 'worker')
     stack.channel.queue_bind(
         queue='docpipe.document.received.v1',
@@ -703,7 +931,7 @@ def _verify_requeue(stack: PackagedStack) -> UUID:
     assert requeued.payload == original_payload
 
     _compose('start', 'worker')
-    _wait_http_status('http://127.0.0.1:19001/health/ready', HTTPStatus.OK)
+    _wait_http_status(_worker_health_url(), HTTPStatus.OK)
     _wait_published(stack.engine, document_id)
     record = _record_for_document(stack.engine, document_id)
     _verify_expected_messages(
@@ -1115,15 +1343,20 @@ def _recreate_stack_and_verify_persistence(
         'postgres',
         'azurite',
     )
-    _compose(
-        'up',
-        '-d',
-        '--no-build',
-        '--wait',
-        '--wait-timeout',
-        '150',
-        'rabbitmq',
-    )
+    try:
+        _compose(
+            'up',
+            '-d',
+            '--no-build',
+            '--wait',
+            '--wait-timeout',
+            '150',
+            'rabbitmq',
+        )
+    except AssertionError as error:
+        if 'is unhealthy' not in str(error):
+            raise
+        _wait_rabbitmq_recovered_after_cookie_race()
     _compose('--profile', 'setup', 'run', '--rm', 'setup')
     pending_event = _record_for_document(stack.engine, pending_restart_id)[1]
     assert pending_event.published_at is None
@@ -1179,6 +1412,9 @@ def test_packaged_compose_flow_failure_recovery_requeue_and_restart() -> None:
             f'{_required("CI_API_URL")}/health/ready', HTTPStatus.OK
         )
         scenario = os.environ.get('DOCPIPE_PACKAGED_SCENARIO')
+        if scenario == 'b1':
+            _verify_packaged_http_body_limit(stack)
+            return
         if scenario == 'b2':
             document_id = _post_document(
                 'b2-baseline.pdf', 'application/pdf', _FORMATS[0][2]
@@ -1196,6 +1432,7 @@ def test_packaged_compose_flow_failure_recovery_requeue_and_restart() -> None:
             return
         accepted = _submit_files(stack)
         _verify_initial_publication(stack, accepted)
+        _verify_packaged_http_body_limit(stack)
         recovered_ids = _verify_channel_recovery(stack)
         requeued_id = _verify_requeue(stack)
         _verify_azurite_outage_recovery(stack, accepted[0][0])
