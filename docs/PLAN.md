@@ -1,5 +1,15 @@
 # Plano de implementação do DocPipe Ingestion
 
+O DocPipe `v1.0.0` possui quatro microsserviços independentes: Ingestion,
+Processing, Triage e Registry, cada um com sua própria API HTTP. O Ingestion
+entrega o documento aceito, armazenado e rastreável por sua API. RabbitMQ
+complementa a API com o contrato público versionado `document.received.v1`;
+a mensageria não substitui a API. Processing transforma o documento original
+em uma representação processada e estruturada, Triage produz
+`TriageDecision` a partir das informações processadas e Registry produz o
+`DocumentRecord` final e rastreável. O escopo deste plano é somente o
+Ingestion.
+
 O plano é incremental. Cada etapa deve terminar com resultado verificável e
 documentação atualizada. As Etapas 1 a 8 permanecem registradas como concluídas;
 esse histórico não comprova o funcionamento da revisão atual. A Etapa 9
@@ -27,7 +37,10 @@ Etapa 9 permanecem preservados em seu contexto histórico, descrito em
 Todos os microsserviços atuais e futuros do DocPipe devem ser desacoplados,
 independentes e possuir utilidade própria. Toda implementação e revisão deve
 preservar as fronteiras de `DESIGN.md`, seção 19, e os critérios do RNF-009 de
-`REQUIREMENTS.md`, incluindo recursos próprios e contratos compatíveis.
+`REQUIREMENTS.md`, incluindo repositório, banco, código, runtime, testes e CI
+próprios, além de contratos compatíveis. Serviços posteriores não alteram o
+banco privado do Ingestion. O aceite do documento e a conclusão da operação
+própria não dependem da execução de Processing, Triage ou Registry.
 
 A auditoria anterior, por inspeção estática, concluiu que o Ingestion atende
 à diretriz e não precisa de refatoração. Não houve validação operacional
@@ -360,6 +373,8 @@ de carga e resiliência, eventual topologia Kubernetes e infraestrutura
 compartilhada. A separação de responsabilidades está aprovada; o repositório
 ainda não existe, e sua implementação e arquitetura não estão definidas. Kind
 poderá ser avaliado nesse contexto de integração local, sem compromisso atual.
+Essa composição sistêmica e a observabilidade central ficam fora deste
+repositório e do escopo local e portátil da `v1.0.0`.
 
 ## Roadmap da `v1.1.0` — Azure
 

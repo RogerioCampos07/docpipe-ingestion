@@ -177,11 +177,18 @@ Os microsserviços do DocPipe serão mantidos em repositórios separados. Cada u
 deverá produzir seus próprios logs estruturados, correlation IDs, métricas e
 traces e permitir a exportação para endpoints configuráveis.
 
+Na arquitetura `v1.0.0`, os quatro serviços são Ingestion, Processing, Triage
+e Registry. Cada serviço conserva sua própria instrumentação e configuração;
+este documento descreve apenas os sinais emitidos pelo Ingestion.
+
 Um futuro repositório integrador ou de plataforma poderá consumir esses
 sinais, compor os microsserviços e concentrar coleta, armazenamento,
 visualização, dashboards, alertas e experimentos integrados. Esse repositório
 ainda não existe e sua arquitetura permanece sujeita a avaliação. A separação
-de responsabilidades está aprovada; isso não define sua implementação.
+de responsabilidades está aprovada; isso não define sua implementação. A
+composição sistêmica e a observabilidade central não fazem parte deste
+repositório nem da entrega local e portátil da `v1.0.0`; cloud provider e
+Kubernetes permanecem fora desse escopo.
 
 As Etapas 9 e 10 consolidam e validam o Ingestion com Docker Compose,
 PostgreSQL próprio, Azurite e RabbitMQ. Os sinais existentes apoiam os testes

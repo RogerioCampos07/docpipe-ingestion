@@ -8,6 +8,12 @@ próprio, Azurite e RabbitMQ, com API e worker separados. Inspeção de código,
 por si só, não equivale a validação operacional; somente resultados executados
 comprovam os critérios.
 
+O DocPipe `v1.0.0` possui quatro microsserviços independentes: Ingestion,
+Processing, Triage e Registry. O produto de domínio do Ingestion é o documento
+aceito, armazenado e rastreável. Cada serviço mantém sua própria API HTTP.
+Este repositório cobre apenas o Ingestion; RabbitMQ complementa sua API para
+comunicação assíncrona e não a substitui.
+
 ## 1. Requisitos funcionais
 
 ### RF-001 — Receber documento
@@ -206,12 +212,27 @@ O serviço deve disponibilizar endpoints de liveness, readiness e métricas.
 
 ### RNF-009 — Autonomia entre microsserviços
 
+O DocPipe `v1.0.0` é composto por Ingestion, Processing, Triage e Registry.
+Suas responsabilidades de domínio são, respectivamente: receber, validar,
+registrar e armazenar o documento original; transformar o original em
+representação processada e estruturada; produzir `TriageDecision` a partir de
+informações processadas; e produzir `DocumentRecord`, o registro documental
+estruturado final e rastreável. O Ingestion entrega um documento aceito,
+armazenado e rastreável, sem executar as responsabilidades dos serviços
+posteriores.
+
 Todos os microsserviços atuais e futuros do DocPipe devem ser desacoplados,
 independentes e possuir responsabilidade de negócio delimitada e utilidade
 própria. Devem manter repositório, domínio, banco de dados, migrations,
 configuração, testes e CI próprios. Banco, RabbitMQ e armazenamento são
 dependências legítimas de infraestrutura e não precisam ser opcionais para
-que o serviço seja independente.
+que o serviço seja independente. Cada um mantém também código e runtime
+próprios.
+
+O Ingestion expõe sua própria API HTTP e publica `document.received.v1` como
+contrato público versionado; RabbitMQ complementa a API. O evento transporta
+referências e metadados, nunca o arquivo completo, URL pública ou credenciais.
+Os serviços posteriores não alteram o banco privado do Ingestion.
 
 **Critérios de aceite do Ingestion**
 

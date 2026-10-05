@@ -4,6 +4,21 @@ Microserviço de entrada do DocPipe. Recebe PDF, PNG ou JPEG, valida e grava o
 original por streaming, persiste metadados e uma outbox transacional e publica
 `document.received.v1` no RabbitMQ. Não executa OCR, classificação ou extração.
 
+Seu produto de domínio é o documento aceito, armazenado e rastreável. O
+Ingestion expõe sua própria API HTTP para recebimento e consulta; RabbitMQ
+complementa essa API para integração assíncrona e não a substitui.
+
+Na arquitetura DocPipe `v1.0.0`, há quatro microsserviços independentes:
+cada um mantém sua própria API HTTP. Ingestion recebe, valida, registra e
+armazena o original; Processing transforma o documento em uma representação
+processada e estruturada; Triage produz uma
+`TriageDecision` a partir de informações processadas; Registry produz o
+`DocumentRecord`, registro documental estruturado final e rastreável. Esses
+limites descrevem responsabilidades de domínio, sem definir implementações
+internas dos demais serviços. O Ingestion não executa OCR, extração,
+normalização, classificação, triagem ou registro documental final, nem depende
+dos outros serviços para concluir sua própria operação.
+
 Receber, registrar e armazenar documentos constitui uma capacidade de negócio
 própria do Ingestion. O serviço permite consultar os metadados e o estado da
 ingestão sem exigir Processing ou a conclusão de etapas posteriores. O `202`
@@ -46,10 +61,18 @@ Atos de Git, tag e publicação de release exigem autorização específica.
 Cada microsserviço deve manter repositório, domínio, banco de dados, migrations,
 configuração, testes e CI próprios, além de imagem, health checks e
 instrumentação. Sua evolução e implantação devem ser independentes, com
-compatibilidade dos contratos públicos e versionados. Um
-futuro repositório integrador ou de plataforma poderá compor os serviços e a
-observabilidade central. A separação de responsabilidades está aprovada;
-esse repositório ainda não existe e sua implementação não está definida.
+compatibilidade dos contratos públicos e versionados. Nenhum serviço importa
+código, modelos, banco ou runtime interno de outro; os serviços posteriores
+não alteram o banco privado do Ingestion. O contrato público
+`document.received.v1` transporta referências e metadados, nunca o arquivo,
+URL pública ou credenciais.
+
+Um futuro repositório integrador ou de plataforma poderá compor os serviços e
+a observabilidade central. A composição integrada não faz parte deste
+repositório nem da fronteira local e portátil da `v1.0.0`; cloud provider e
+Kubernetes permanecem fora deste ajuste. A separação de responsabilidades
+está aprovada; esse repositório ainda não existe e sua implementação não está
+definida.
 
 ### Roadmap da `v1.1.0`
 
