@@ -145,6 +145,25 @@ def test_rejected_upload_leaves_no_file_metadata_or_event(
     assert list(settings.storage_root.glob('*.part')) == []
 
 
+def test_oversized_multipart_leaves_no_file_metadata_or_event(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path, max_size_bytes=8)
+
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            '/v1/documents',
+            files={'file': ('sample.pdf', b'%PDF-123', 'application/pdf')},
+            data={'padding': 'x' * (64 * 1024)},
+        )
+
+    assert response.status_code == status.HTTP_413_CONTENT_TOO_LARGE
+    assert response.json()['error']['code'] == 'file_too_large'
+    assert _record_counts(settings) == (0, 0)
+    assert list(settings.storage_root.glob('*.blob')) == []
+    assert list(settings.storage_root.glob('*.part')) == []
+
+
 def test_get_returns_not_found_for_unknown_document(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     missing_id = UUID('12345678-1234-5678-1234-567812345678')

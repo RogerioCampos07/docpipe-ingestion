@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Form, status
 
+from docpipe_ingestion.api.body_limit import DocumentBodyLimitRoute
 from docpipe_ingestion.api.dependencies import (
     GetDocumentUseCase,
     IngestDocumentUseCase,
@@ -19,7 +20,11 @@ from docpipe_ingestion.api.schemas.documents import (
 from docpipe_ingestion.api.schemas.errors import ErrorResponse
 from docpipe_ingestion.application.ingest_document import IngestDocumentCommand
 
-router = APIRouter(prefix='/v1/documents', tags=['documents'])
+router = APIRouter(
+    prefix='/v1/documents',
+    tags=['documents'],
+    route_class=DocumentBodyLimitRoute,
+)
 
 
 def _error_response(description: str) -> dict[str, Any]:
@@ -37,7 +42,7 @@ def _error_response(description: str) -> dict[str, Any]:
     ),
     responses={
         400: _error_response('The multipart request or file is invalid.'),
-        413: _error_response('The configured file-size limit was exceeded.'),
+        413: _error_response('The upload size limit was exceeded.'),
         415: _error_response('The file type is not supported.'),
         503: _error_response('Storage or persistence is unavailable.'),
     },

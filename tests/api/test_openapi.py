@@ -1,3 +1,5 @@
+from importlib.metadata import version
+
 from fastapi.testclient import TestClient
 
 from docpipe_ingestion.api.app import create_app
@@ -10,6 +12,7 @@ def test_openapi_documents_versioned_contract() -> None:
     with TestClient(application) as client:
         schema = client.get('/openapi.json').json()
 
+    assert schema['info']['version'] == version('docpipe-ingestion') == '1.0.0'
     post = schema['paths']['/v1/documents']['post']
     get = schema['paths']['/v1/documents/{document_id}']['get']
     assert 'multipart/form-data' in post['requestBody']['content']
