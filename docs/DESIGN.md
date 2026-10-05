@@ -2,7 +2,12 @@
 
 ## 1. Contexto
 
-O DocPipe processa documentos corporativos por meio de microserviços independentes. O Ingestion é a fronteira de entrada do pipeline e deve aceitar picos de upload sem acoplar a resposta HTTP ao processamento posterior.
+O DocPipe `v1.0.0` é composto por quatro microsserviços independentes:
+Ingestion, Processing, Triage e Registry. O Ingestion é a fronteira de entrada
+e entrega como produto de domínio um documento aceito, armazenado e
+rastreável. Ele expõe sua própria API HTTP para recebimento e consulta;
+RabbitMQ complementa essa API para integração assíncrona e não a substitui.
+O aceite não aguarda o processamento posterior.
 
 ## 2. Objetivos arquiteturais
 
@@ -31,8 +36,11 @@ posterior à validação funcional Azure.
 ## 3. Fora do escopo
 
 - OCR e extração de texto;
+- normalização do documento;
 - classificação do tipo de documento;
+- triagem e decisão de triagem;
 - interpretação de campos de negócio;
+- produção do registro documental final;
 - gestão de usuários e autenticação;
 - relatórios e notificações;
 - interface web.
@@ -424,6 +432,27 @@ independentes e possuir utilidade própria. Cada serviço deve:
 - permitir evolução e implantação independentes, respeitando a
   compatibilidade dos contratos.
 
+Na arquitetura `v1.0.0`, as fronteiras de domínio são:
+
+Cada serviço expõe sua própria API HTTP, além de se comunicar por contratos
+públicos versionados quando integra outros serviços.
+
+- **Ingestion:** recebe, valida, registra e armazena o documento original,
+  entregando um documento aceito, armazenado e rastreável;
+- **Processing:** transforma o documento original em uma representação
+  processada e estruturada;
+- **Triage:** produz uma `TriageDecision` a partir de informações processadas;
+- **Registry:** produz o `DocumentRecord`, registro documental estruturado
+  final e rastreável.
+
+Essa delimitação não especifica a implementação interna dos serviços
+posteriores. O Ingestion mantém sua API HTTP própria e publica
+`document.received.v1` como contrato público versionado; RabbitMQ complementa
+a API para comunicação assíncrona. O evento transporta referências e
+metadados, não o arquivo completo, URL pública ou credenciais. O aceite e a
+conclusão da operação própria do Ingestion não dependem da execução de
+Processing, Triage ou Registry.
+
 É proibido importar código interno, modelos ORM ou classes de domínio de
 outro serviço, acessar diretamente seus bancos ou tabelas ou usar seu
 filesystem interno. Instalação, build, migrations, inicialização e validação
@@ -437,6 +466,11 @@ nem exige torná-las opcionais. Compartilhar infraestrutura não autoriza
 acesso ao estado interno de outro serviço. No laboratório, as réplicas do
 Ingestion compartilham seu banco PostgreSQL e seu storage Azurite; o banco
 continua privado ao Ingestion.
+
+Os serviços posteriores não alteram o banco privado do Ingestion. Nenhum
+serviço importa código interno, modelos, banco de dados ou runtime de outro;
+cada um mantém repositório, domínio, persistência, configuração, testes e CI
+próprios, com evolução independente por contratos públicos versionados.
 
 Receber, registrar e armazenar documentos constitui uma capacidade própria,
 com consulta de metadados e estado da ingestão. Ela não exige Processing nem
@@ -474,4 +508,7 @@ operar infraestrutura compartilhada, hospedar a stack central de
 observabilidade e executar testes ponta a ponta ou integrados. Também poderá
 avaliar uma topologia Kubernetes, inclusive Kind para integração local. Esse
 repositório ainda não foi criado e sua arquitetura não está definida. A
-separação de responsabilidades está aprovada; a implementação permanece futura.
+separação de responsabilidades está aprovada; a implementação permanece
+futura. A composição sistêmica, observabilidade central, cloud provider e
+Kubernetes não pertencem ao escopo deste repositório nem ao fechamento local
+e portátil da `v1.0.0`.
