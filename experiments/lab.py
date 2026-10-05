@@ -450,8 +450,8 @@ def _prepare(manifest: dict[str, Any]) -> None:
 
 def _image_ids(manifest: dict[str, Any]) -> dict[str, str]:
     images = {
-        'postgres': 'postgres:17.6-bookworm',
-        'rabbitmq': 'rabbitmq:4.1.4-management',
+        'postgres': 'postgres:17.11-bookworm',
+        'rabbitmq': 'rabbitmq:4.3.6-management',
         'azurite': 'mcr.microsoft.com/azure-storage/azurite:3.37.0',
         'api_worker': manifest['project'] + '-app',
         'locust': manifest['project'] + '-locust',

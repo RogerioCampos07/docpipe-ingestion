@@ -36,7 +36,7 @@ x-app: &app
 
 services:
   postgres:
-    image: postgres:17.6-bookworm
+    image: postgres:17.11-bookworm
     environment:
       POSTGRES_DB: docpipe_ingestion
       POSTGRES_USER: docpipe
@@ -55,7 +55,7 @@ services:
     restart: 'no'
 
   rabbitmq:
-    image: rabbitmq:4.1.4-management
+    image: rabbitmq:4.3.6-management
     hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: docpipe
