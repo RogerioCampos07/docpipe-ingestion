@@ -1,5 +1,8 @@
 # DocPipe Ingestion
 
+Para preparar o ambiente local e enviar o primeiro documento, consulte o
+[tutorial prático de uso da v1.0.0](docs/USAGE.md).
+
 Microserviço de entrada do DocPipe. Recebe PDF, PNG ou JPEG, valida e grava o
 original por streaming, persiste metadados e uma outbox transacional e publica
 `document.received.v1` no RabbitMQ. Não executa OCR, classificação ou extração.
