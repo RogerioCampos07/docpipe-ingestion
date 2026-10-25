@@ -1,6 +1,6 @@
 [project]
 name = "docpipe-ingestion"
-version = "1.0.0"
+version = "1.0.1"
 description = "Microserviço de ingestão de documentos do DocPipe"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -13,10 +13,12 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.65b0",
     "opentelemetry-sdk>=1.44.0",
     "pika>=1.4.4",
+    "pillow>=12,<13",
     "prometheus-client>=0.26.0",
     "psycopg[binary]>=3.2,<4",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
+    "pypdf>=6,<7",
     "python-multipart>=0.0.32",
     "sqlalchemy>=2.0.54",
     "uvicorn>=0.53.0",

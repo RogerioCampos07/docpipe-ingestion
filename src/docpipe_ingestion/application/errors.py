@@ -22,6 +22,10 @@ class UnsupportedFileTypeError(IngestionError):
     """Raised when extension, content type, and signature do not agree."""
 
 
+class InvalidFileStructureError(IngestionError):
+    """Raised when a supported file is not structurally valid."""
+
+
 class StorageError(IngestionError):
     """Base class for storage adapter failures."""
 

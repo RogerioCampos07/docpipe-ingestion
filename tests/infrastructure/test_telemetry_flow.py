@@ -40,6 +40,7 @@ from docpipe_ingestion.infrastructure.observability.metrics import (
     create_metrics,
 )
 from docpipe_ingestion.infrastructure.settings import Settings
+from tests.document_fixtures import valid_pdf
 
 CORRELATION_ID = '87654321-4321-8765-4321-876543218765'
 TRACE_ID = '1234567890abcdef1234567890abcdef'
@@ -152,7 +153,7 @@ def test_ingestion_publication_and_signals_survive_export_failure(
             files={
                 'file': (
                     'private.pdf',
-                    b'%PDF-1.7\nprivate-content',
+                    valid_pdf(),
                     'application/pdf',
                 )
             },

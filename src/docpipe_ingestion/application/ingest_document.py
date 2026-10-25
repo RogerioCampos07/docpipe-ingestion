@@ -107,34 +107,36 @@ class IngestDocument:
             chunk_size_bytes=self._limits.chunk_size_bytes,
         )
 
-        storage_started = perf_counter()
-        try:
-            with span('storage.upload', provider=self._tracer_provider):
-                self._storage.store(storage_key, validated_stream)
-        except Exception as error:
-            if self._metrics is not None:
-                self._metrics.storage_duration.labels(
-                    self._storage_backend, 'failure'
-                ).observe(perf_counter() - storage_started)
-                self._metrics.storage_errors.labels(
-                    self._storage_backend, 'upload', type(error).__name__
-                ).inc()
-                self._metrics.uploads.labels('failed').inc()
-            logger.warning(
-                'storage upload failed',
-                extra={
-                    'operation': 'storage.upload',
-                    'status': 'failure',
-                    'duration_ms': round(
-                        (perf_counter() - storage_started) * 1000, 3
-                    ),
-                    'dependency_type': 'storage',
-                    'dependency_backend': self._storage_backend,
-                    'error_category': type(error).__name__,
-                },
-            )
-            raise
-        file_metadata = validated_stream.metadata
+        with validated_stream:
+            validated_stream.validate()
+            storage_started = perf_counter()
+            try:
+                with span('storage.upload', provider=self._tracer_provider):
+                    self._storage.store(storage_key, validated_stream)
+                file_metadata = validated_stream.metadata
+            except Exception as error:
+                if self._metrics is not None:
+                    self._metrics.storage_duration.labels(
+                        self._storage_backend, 'failure'
+                    ).observe(perf_counter() - storage_started)
+                    self._metrics.storage_errors.labels(
+                        self._storage_backend, 'upload', type(error).__name__
+                    ).inc()
+                    self._metrics.uploads.labels('failed').inc()
+                logger.warning(
+                    'storage upload failed',
+                    extra={
+                        'operation': 'storage.upload',
+                        'status': 'failure',
+                        'duration_ms': round(
+                            (perf_counter() - storage_started) * 1000, 3
+                        ),
+                        'dependency_type': 'storage',
+                        'dependency_backend': self._storage_backend,
+                        'error_category': type(error).__name__,
+                    },
+                )
+                raise
         logger.info(
             'storage upload completed',
             extra={

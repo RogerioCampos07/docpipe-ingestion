@@ -1,7 +1,11 @@
-# Tutorial prático — DocPipe Ingestion v1.0.0
+# Tutorial prático — DocPipe Ingestion v1.0.1 (candidata em preparação)
 
 Este tutorial mostra como executar localmente o Ingestion com Docker Compose,
 enviar um documento e consultar o estado da ingestão.
+
+Ele descreve a operação local da candidata `1.0.1`, que ainda não foi
+publicada. As referências à arquitetura histórica da `v1.0.0` permanecem nos
+documentos de requisitos e design.
 
 ## Visão geral
 
@@ -44,7 +48,7 @@ Confirme a versão declarada pelo pacote:
 grep '^version = ' pyproject.toml
 ```
 
-O resultado esperado é `version = "1.0.0"`. O Compose principal está em
+O resultado esperado é `version = "1.0.1"`. O Compose principal está em
 `docker-compose.yml`; as variáveis e portas locais estão listadas em
 `.env.example`. Crie o arquivo local usado pelo Compose:
 
@@ -111,20 +115,21 @@ docker compose logs --tail=100 worker
 
 ## Primeiro upload
 
-Crie um PDF sintético mínimo em `/tmp`; ele não é adicionado ao repositório:
+Use um PDF válido e não sensível disponível localmente. Para criar um arquivo
+de demonstração, abra um editor de texto, escreva uma frase ou duas, escolha
+"Exportar" ou "Imprimir em PDF" e salve o resultado em um caminho substituível,
+por exemplo `/caminho/para/docpipe-exemplo.pdf`. Não use um arquivo criado
+apenas com um cabeçalho `%PDF-1.7`: isso não constitui um PDF válido.
+
+Abra o PDF salvo em um leitor local e confirme que ele renderiza antes do
+upload. Depois, envie-o no campo multipart `file`:
 
 ```bash
-printf '%%PDF-1.7\nDocumento sintético para teste local.\n' \
-  > /tmp/docpipe-exemplo.pdf
-```
-
-Confirme novamente que a API aceita requisições e envie o arquivo no campo
-multipart `file`:
-
-```bash
+PDF_LOCAL=/caminho/para/docpipe-exemplo.pdf
+sha256sum "$PDF_LOCAL"
 curl --fail --show-error http://127.0.0.1:8000/health/ready
 curl --include --show-error \
-  -F 'file=@/tmp/docpipe-exemplo.pdf;type=application/pdf' \
+  -F "file=@${PDF_LOCAL};type=application/pdf" \
   http://127.0.0.1:8000/v1/documents
 ```
 
@@ -156,8 +161,63 @@ pode aparecer como `PUBLISHED`. A API também expõe o contrato OpenAPI em
 `http://127.0.0.1:8000/docs`.
 
 O contrato aceita um PDF, PNG ou JPEG por requisição. A assinatura do arquivo
-é validada além do nome e do tipo informado. O limite padrão do arquivo é
-10 MiB; o excesso retorna `413`, e um tipo não aceito retorna `415`.
+é validada além da extensão e do `Content-Type`, e a estrutura é analisada
+antes da aceitação definitiva. O limite padrão do arquivo é 10 MiB; o excesso
+retorna `413 file_too_large`, um tipo não permitido retorna
+`415 unsupported_file_type` e uma estrutura inválida retorna
+`400 invalid_file_structure`. PNGs e JPEGs acima de 40 milhões de pixels
+também retornam `400 invalid_file_structure`; esse limite protege a
+decodificação e não é um limite de tamanho em bytes.
+
+Uma resposta de erro mantém o envelope atual e o cabeçalho
+`X-Correlation-ID`, por exemplo:
+
+```json
+{
+  "error": {
+    "code": "invalid_file_structure",
+    "message": "The uploaded file structure is not valid.",
+    "correlation_id": "UUID da requisição"
+  }
+}
+```
+
+O serviço não cria documento, evento outbox, blob definitivo nem marcador de
+upload quando a validação estrutural rejeita o arquivo.
+
+### Conferir a preservação do original
+
+O evento `document.received.v1` contém `data.storage_key`. Em um ambiente local
+Compose, depois de substituir `DOCUMENT_ID`, consulte essa chave no PostgreSQL:
+
+```bash
+STORAGE_KEY="$(docker compose exec -T postgres psql \
+  -U "${POSTGRES_USER:-docpipe}" \
+  -d "${POSTGRES_DB:-docpipe_ingestion}" -Atc \
+  "SELECT payload->'data'->>'storage_key' FROM outbox_events \
+   WHERE aggregate_id = 'DOCUMENT_ID' \
+   ORDER BY created_at DESC LIMIT 1")"
+printf 'storage_key=%s\n' "$STORAGE_KEY"
+```
+
+O blob é privado. Para baixar o original usando o SDK já presente na imagem da
+API, execute:
+
+```bash
+docker compose exec -T api python -c \
+  'import os, sys
+from azure.storage.blob import BlobServiceClient
+service = BlobServiceClient.from_connection_string(
+    os.environ["DOCPIPE_INGESTION_BLOB_CONNECTION_STRING"])
+blob = service.get_blob_client("documents", sys.argv[1])
+sys.stdout.buffer.write(blob.download_blob().readall())' \
+  "$STORAGE_KEY" > /tmp/docpipe-original-download
+sha256sum "$PDF_LOCAL" /tmp/docpipe-original-download
+```
+
+Os hashes devem ser iguais; a comparação também confirma que tamanho e bytes
+foram preservados. Use somente documentos sintéticos ou anonimizados no
+tutorial.
 
 ## O que acontece depois
 
@@ -237,9 +297,11 @@ Se a preparação falhou, veja os logs e execute de novo o comando do serviço
 ### Upload rejeitado
 
 Confira se o arquivo é PDF, PNG ou JPEG válido e se não excede o limite
-configurado. O serviço responde `415` para tipo não aceito e `413` para
-arquivo ou corpo acima do limite. Consulte o corpo da resposta HTTP e os logs
-da API; não envie documentos reais para diagnóstico.
+configurado. O serviço responde `400 invalid_file_structure` para arquivo
+permitido, porém truncado, corrompido ou acima do limite de 40 milhões de
+pixels; `415 unsupported_file_type` para tipo não aceito; e `413
+file_too_large` para arquivo ou corpo acima do limite. Consulte o corpo da
+resposta HTTP e os logs da API; não envie documentos reais para diagnóstico.
 
 ### Docker Compose não conecta ao daemon
 
@@ -273,7 +335,7 @@ quiser conscientemente descartar todos os dados locais do Ingestion.
 
 ## Limites da versão
 
-A `v1.0.0` descrita aqui é local e portátil: usa Docker Compose, PostgreSQL,
+A candidata `v1.0.1` descrita aqui é local e portátil: usa Docker Compose,
 Azurite e RabbitMQ, sem cloud provider. O PostgreSQL local não usa TLS e sua
 porta é publicada somente em loopback por padrão. Esta configuração não
 representa uma configuração de produção; cloud provider e TLS de produção

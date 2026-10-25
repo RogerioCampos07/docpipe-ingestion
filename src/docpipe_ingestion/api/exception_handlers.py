@@ -12,6 +12,7 @@ from docpipe_ingestion.application.errors import (
     EmptyFileError,
     FileTooLargeError,
     InvalidFileMetadataError,
+    InvalidFileStructureError,
     MetadataPersistenceError,
     MetadataQueryError,
     StorageError,
@@ -119,6 +120,23 @@ def install_exception_handlers(application: FastAPI) -> None:
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             code='unsupported_file_type',
             message='The uploaded file type is not supported.',
+        )
+
+    @application.exception_handler(InvalidFileStructureError)
+    async def invalid_file_structure(
+        request: Request,
+        error: InvalidFileStructureError,
+    ) -> JSONResponse:
+        del error
+        application.state.metrics.validation_failures.labels(
+            'invalid_structure'
+        ).inc()
+        application.state.metrics.uploads.labels('rejected').inc()
+        return error_response(
+            request,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code='invalid_file_structure',
+            message='The uploaded file structure is not valid.',
         )
 
     @application.exception_handler(DocumentNotFoundError)
