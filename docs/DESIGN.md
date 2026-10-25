@@ -9,6 +9,9 @@ rastreável. Ele expõe sua própria API HTTP para recebimento e consulta;
 RabbitMQ complementa essa API para integração assíncrona e não a substitui.
 O aceite não aguarda o processamento posterior.
 
+A validação estrutural descrita neste documento prepara a correção da `1.0.1`;
+essa versão ainda não foi publicada.
+
 ## 2. Objetivos arquiteturais
 
 - responder rapidamente após a aceitação segura do documento;
@@ -67,9 +70,11 @@ posterior à validação funcional Azure.
 ## 5. Fluxo de ingestão
 
 1. A API recebe `multipart/form-data` com arquivo e metadados permitidos.
-2. A aplicação verifica tamanho, extensão, `Content-Type` e assinatura conhecida.
-3. Durante o streaming, calcula SHA-256 e grava o arquivo no storage
-   configurado, com uma chave gerada pelo sistema.
+2. A aplicação verifica tamanho, extensão, `Content-Type` e assinatura
+   conhecida enquanto calcula SHA-256 e faz staging em temporário limitado.
+3. Antes do storage definitivo, valida a estrutura com `pypdf` para PDF e
+   com Pillow para PNG/JPEG; somente o arquivo aprovado é reenviado por
+   streaming ao storage com uma chave gerada pelo sistema.
 4. Em uma transação no banco configurado, grava o documento e a mensagem na
    outbox.
 5. Retorna `202 Accepted` com `document_id`, estado e `correlation_id`.
@@ -79,6 +84,13 @@ posterior à validação funcional Azure.
 Se o arquivo for gravado, mas a transação falhar, ele se torna órfão e deverá
 ser identificado por uma rotina de reconciliação. O arquivo não deve ser
 apagado automaticamente durante uma falha incerta.
+
+O staging usa `SpooledTemporaryFile`: mantém até 1 MiB em memória e passa a um
+temporário privado em disco acima desse valor. O staging nunca ultrapassa o
+tamanho máximo configurado do upload. O limite de 1 MiB é somente o limiar do
+staging em memória; não representa o consumo total da requisição nem um limite
+total para os parsers. O temporário é fechado e removido em sucesso, rejeição
+ou exceção.
 
 ## 6. Armazenamento local
 
@@ -222,6 +234,23 @@ deve validar essa recuperação, sem campanhas experimentais de falhas.
 - As permissões locais devem restringir o acesso ao usuário do processo.
 - TLS é obrigatório fora do ambiente local.
 - O serviço aplica limite de requisição e de tamanho de arquivo.
+- O staging estrutural mantém até 1 MiB em memória e move o restante para um
+  temporário privado, removido em sucesso, rejeição ou exceção.
+- PDF é analisado com `pypdf`: exige `%%EOF` nos últimos 1024 bytes, trailer e
+  catálogo legíveis e, quando não criptografado, árvore de páginas navegável.
+  PDFs criptografados podem ser aceitos quando a estrutura externa é legível;
+  objetos protegidos não são profundamente validados, descriptografados nem
+  submetidos a senha.
+- PNG e JPEG são identificados e decodificados com Pillow: `verify()` valida a
+  estrutura e uma segunda abertura com `load()` percorre os dados completos.
+  O limite é de 40 milhões de pixels decodificados.
+- A validação ocorre antes do storage definitivo e da transação de documento e
+  outbox. Uma rejeição estrutural não cria documento, outbox, blob definitivo
+  nem marcador residual de upload.
+- A validação estrutural não é antimalware, não garante integridade semântica,
+  não promete detectar toda corrupção e não converte nem repara os bytes
+  originais.
+- O contrato público do evento permanece `document.received.v1`.
 - O conteúdo do documento nunca aparece em logs, métricas ou traces.
 - Metadados pessoais devem ser mínimos e possuir política futura de retenção e exclusão compatível com LGPD.
 - Varredura antimalware pode ser incorporada posteriormente como etapa assíncrona dedicada.

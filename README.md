@@ -1,7 +1,7 @@
 # DocPipe Ingestion
 
 Para preparar o ambiente local e enviar o primeiro documento, consulte o
-[tutorial prático de uso da v1.0.0](docs/USAGE.md).
+[tutorial prático da candidata v1.0.1](docs/USAGE.md).
 
 Microserviço de entrada do DocPipe. Recebe PDF, PNG ou JPEG, valida e grava o
 original por streaming, persiste metadados e uma outbox transacional e publica
@@ -40,9 +40,9 @@ execução nem encerra a Etapa 9.
 
 ## Versões e estado do desenvolvimento
 
-A versão em desenvolvimento é a `v1.0.0`. A implementação da Etapa 9 foi
-mergeada e os três checks de CI passaram na revisão `7e48d5f`. A auditoria
-10a classificou as provas funcionais e registrou pendências obrigatórias em
+A candidata em preparação é a `v1.0.1`, ainda não publicada. A implementação
+da Etapa 9 foi mergeada e os três checks de CI passaram na revisão `7e48d5f`.
+A auditoria 10a classificou as provas funcionais e registrou pendências em
 [RELEASE_AUDIT.md](docs/RELEASE_AUDIT.md). A 10b fechará essas pendências,
 validará a candidata final e preparará o aceite local. Os critérios de
 fechamento permanecem em [PLAN.md](docs/PLAN.md).
@@ -60,6 +60,13 @@ observabilidade central e ensaios experimentais de carga ou resiliência não
 integram seu fechamento. Os critérios e procedimentos estão em
 [PLAN.md](docs/PLAN.md); não haverá uma etapa adicional para concluir a versão.
 Atos de Git, tag e publicação de release exigem autorização específica.
+
+A validação estrutural de PDF, PNG e JPEG está implementada como preparação da
+`1.0.1`, ainda não publicada. Ela complementa assinatura, extensão e
+`Content-Type`; estruturas inválidas retornam `400` com
+`invalid_file_structure`. Imagens são limitadas a 40 milhões de pixels. O
+[tutorial](docs/USAGE.md) mostra o fluxo local, e os detalhes técnicos e as
+limitações estão em [DESIGN.md](docs/DESIGN.md#12-segurança-e-privacidade).
 
 Cada microsserviço deve manter repositório, domínio, banco de dados, migrations,
 configuração, testes e CI próprios, além de imagem, health checks e
@@ -104,8 +111,8 @@ O Compose principal inclui PostgreSQL, Azurite, RabbitMQ, preparação controlad
 API e worker separados. A imagem executa como usuário não-root. A prova
 `packaged` executou com sucesso para a revisão auditada no GitHub Actions;
 o alcance e as pendências de cenários específicos estão no relatório 10a. O
-pacote, o lockfile e o OpenAPI declaram `1.0.0` após o alinhamento inicial da
-10b. As demais pendências da candidata permanecem na auditoria.
+pacote, o lockfile e o OpenAPI declaram `1.0.1` nesta candidata em preparação;
+as demais pendências permanecem na auditoria e a publicação não ocorreu.
 
 Banco, RabbitMQ e armazenamento são dependências legítimas de infraestrutura;
 independência entre microsserviços não significa ausência dessas dependências.
@@ -202,6 +209,22 @@ O arquivo enviado tem limite padrão de 10 MiB
 o envelope multipart, pode usar até 64 KiB adicionais. Ambos os limites
 produzem `413` quando excedidos; o limite do corpo é verificado durante a
 leitura, inclusive sem `Content-Length` confiável.
+
+Antes do armazenamento definitivo, o serviço mantém no máximo 1 MiB do
+arquivo validado em memória e usa um temporário privado para o restante,
+sempre respeitando o limite configurado do upload. PDF é analisado com
+`pypdf`: além do cabeçalho, exige marcador EOF, trailer e catálogo legíveis
+e, quando não criptografado, árvore de páginas navegável. PDFs
+criptografados continuam permitidos quando a estrutura externa é legível;
+o Ingestion não tenta descriptografá-los.
+
+PNG e JPEG são analisados e integralmente decodificados com Pillow, incluindo
+verificação do formato detectado e dos dados da imagem. Imagens acima de
+40 milhões de pixels decodificados são rejeitadas para limitar uso de
+recursos. Falhas estruturais retornam `400` com o código
+`invalid_file_structure`, antes de criar blob, documento ou outbox. Essa
+validação detecta corrupção e truncamento comuns; ela não é antimalware, não
+atesta conteúdo seguro e não verifica a integridade semântica do documento.
 
 ## Instrumentação e telemetria
 

@@ -14,6 +14,9 @@ aceito, armazenado e rastreável. Cada serviço mantém sua própria API HTTP.
 Este repositório cobre apenas o Ingestion; RabbitMQ complementa sua API para
 comunicação assíncrona e não a substitui.
 
+Os critérios adicionais de validação estrutural preparam a correção da `1.0.1`,
+que ainda não foi publicada.
+
 ## 1. Requisitos funcionais
 
 ### RF-001 — Receber documento
@@ -37,7 +40,23 @@ O serviço deve validar o documento antes de aceitá-lo.
 - rejeita tipo não permitido com `415`;
 - rejeita arquivo acima do limite configurado com `413`;
 - não confia apenas em extensão ou `Content-Type`;
+- rejeita o falso PDF de 48 bytes formado somente por cabeçalho e texto;
+- rejeita PDF truncado ou com EOF, trailer, catálogo ou árvore de páginas
+  inconsistente conforme as verificações do parser;
+- rejeita PNG e JPEG truncados, corrompidos ou incompatíveis com os dados
+  decodificados pelo Pillow;
+- rejeita PNG e JPEG acima de 40 milhões de pixels com `400
+  invalid_file_structure`;
+- aceita PDF, PNG e JPEG estruturalmente válidos dentro do limite configurado;
+- preserva bytes, tamanho e SHA-256 dos arquivos aceitos;
+- rejeita conteúdo estruturalmente inválido com `400 invalid_file_structure`
+  antes de criar documento, outbox, blob definitivo ou marcador residual;
 - nomes e metadados inválidos não formam caminhos de armazenamento.
+
+PDFs criptografados podem ser aceitos quando a estrutura externa é legível. O
+serviço não solicita senha, descriptografa nem valida profundamente objetos
+protegidos. Essas verificações estruturais não são antimalware, não garantem
+integridade semântica e não convertem ou reparam os bytes originais.
 
 ### RF-003 — Armazenar original
 
@@ -293,6 +312,9 @@ acima exigem evidências e não são uma declaração de testes aprovados.
 | --- | --- | --- |
 | CT-001 | PDF válido | `202`, arquivo salvo, metadados e outbox criados |
 | CT-002 | PNG/JPEG válido | `202` e fluxo completo |
+| CT-002A | PDF mínimo falso (48 bytes) | `400 invalid_file_structure`, sem documento, outbox ou blob residual |
+| CT-002B | PDF/PNG/JPEG truncado ou corrompido | `400 invalid_file_structure`, sem efeitos persistidos |
+| CT-002C | Imagem acima de 40 milhões de pixels | `400 invalid_file_structure`, sem efeitos persistidos |
 | CT-003 | Arquivo vazio | requisição rejeitada |
 | CT-004 | Tipo não permitido | `415` e nenhuma aceitação parcial |
 | CT-005 | Tamanho excedido | `413` sem crescimento ilimitado de memória |
