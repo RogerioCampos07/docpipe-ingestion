@@ -12,7 +12,7 @@ def test_openapi_documents_versioned_contract() -> None:
     with TestClient(application) as client:
         schema = client.get('/openapi.json').json()
 
-    assert schema['info']['version'] == version('docpipe-ingestion') == '1.0.0'
+    assert schema['info']['version'] == version('docpipe-ingestion') == '1.0.1'
     post = schema['paths']['/v1/documents']['post']
     get = schema['paths']['/v1/documents/{document_id}']['get']
     assert 'multipart/form-data' in post['requestBody']['content']

@@ -71,7 +71,7 @@ def create_app(
 
     application = FastAPI(
         title=current_settings.service_name,
-        version='1.0.0',
+        version='1.0.1',
         description='Private document ingestion API for DocPipe.',
         lifespan=lifespan,
     )

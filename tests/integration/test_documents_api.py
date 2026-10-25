@@ -18,8 +18,9 @@ from docpipe_ingestion.infrastructure.database.models import (
     OutboxEventModel,
 )
 from docpipe_ingestion.infrastructure.settings import Settings
+from tests.document_fixtures import valid_pdf
 
-PDF_CONTENT = b'%PDF-1.7\nsynthetic integration document'
+PDF_CONTENT = valid_pdf()
 CORRELATION_ID = UUID('87654321-4321-8765-4321-876543218765')
 
 
@@ -143,6 +144,24 @@ def test_rejected_upload_leaves_no_file_metadata_or_event(
     assert _record_counts(settings) == (0, 0)
     assert list(settings.storage_root.glob('*.blob')) == []
     assert list(settings.storage_root.glob('*.part')) == []
+
+
+def test_false_pdf_returns_400_without_persistent_side_effects(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    false_pdf = b'%PDF-1.7\nDocumento sint\xc3\xa9tico para teste local.\n'
+
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            '/v1/documents',
+            files={'file': ('tutorial.pdf', false_pdf, 'application/pdf')},
+        )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.json()['error']['code'] == 'invalid_file_structure'
+    assert _record_counts(settings) == (0, 0)
+    assert list(settings.storage_root.iterdir()) == []
 
 
 def test_oversized_multipart_leaves_no_file_metadata_or_event(

@@ -29,6 +29,7 @@ from docpipe_ingestion.infrastructure.messaging.rabbitmq import (
     RabbitMQPublisher,
 )
 from docpipe_ingestion.infrastructure.settings import Settings
+from tests.document_fixtures import valid_pdf
 from tests.integration.conftest import migrate
 
 pytestmark = [
@@ -75,7 +76,7 @@ def test_postgresql_azurite_rabbitmq_flow(
     )
     rabbit_connection.channel().queue_purge(settings.rabbitmq_queue)
     rabbit_connection.close()
-    content = b'%PDF-1.7\nshared stack document'
+    content = valid_pdf()
     try:
         with TestClient(create_app(settings)) as client:
             response = client.post(

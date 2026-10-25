@@ -13,6 +13,7 @@ from docpipe_ingestion.application.errors import (
     EmptyFileError,
     FileTooLargeError,
     InvalidFileMetadataError,
+    InvalidFileStructureError,
     MetadataPersistenceError,
     MetadataQueryError,
     UnsupportedFileTypeError,
@@ -176,6 +177,11 @@ def test_post_rejects_more_than_one_file() -> None:
     ('error', 'expected_status', 'expected_code'),
     [
         (InvalidFileMetadataError('private metadata'), 400, 'invalid_file'),
+        (
+            InvalidFileStructureError('private parser detail'),
+            400,
+            'invalid_file_structure',
+        ),
         (EmptyFileError('empty'), 400, 'empty_file'),
         (FileTooLargeError(10), 413, 'file_too_large'),
         (UnsupportedFileTypeError('type'), 415, 'unsupported_file_type'),

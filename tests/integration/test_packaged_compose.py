@@ -30,6 +30,7 @@ from docpipe_ingestion.infrastructure.database.models import (
     OutboxEventModel,
 )
 from docpipe_ingestion.infrastructure.settings import Settings
+from tests.document_fixtures import valid_jpeg, valid_pdf, valid_png
 
 pytestmark = [
     pytest.mark.packaged,
@@ -40,13 +41,12 @@ pytestmark = [
 ]
 
 _FORMATS = (
-    ('sample.pdf', 'application/pdf', b'%PDF-1.7\nsynthetic PDF'),
-    ('sample.png', 'image/png', b'\x89PNG\r\n\x1a\nsynthetic PNG'),
-    ('sample.jpg', 'image/jpeg', b'\xff\xd8\xffsynthetic JPEG'),
+    ('sample.pdf', 'application/pdf', valid_pdf()),
+    ('sample.png', 'image/png', valid_png()),
+    ('sample.jpg', 'image/jpeg', valid_jpeg()),
 )
 _MAX_ATTEMPTS = 5
 _PERSISTENT_DELIVERY_MODE = 2
-_REJECTED_UPLOAD_MARKERS = 2
 _RABBITMQ_CONNECT_TIMEOUT_SECONDS = 45
 _MAX_FILE_SIZE_BYTES = int(
     Settings.model_fields['max_file_size_bytes'].default
@@ -690,6 +690,12 @@ def _submit_files(
     assert status == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
     status, _ = _post_document_response('empty.pdf', 'application/pdf', b'')
     assert status == HTTPStatus.BAD_REQUEST
+    false_pdf = b'%PDF-1.7\nDocumento sint\xc3\xa9tico para teste local.\n'
+    status, response = _post_document_response(
+        'tutorial.pdf', 'application/pdf', false_pdf
+    )
+    assert status == HTTPStatus.BAD_REQUEST
+    assert json.loads(response)['error']['code'] == 'invalid_file_structure'
     status, _ = _request('POST', '/v1/documents', b'{"not":"multipart"}')
     assert status == HTTPStatus.BAD_REQUEST
     with Session(stack.engine) as session:
@@ -708,10 +714,7 @@ def _submit_files(
         item.name
         for item in stack.container.list_blobs(name_starts_with='_uploads/')
     }
-    assert (
-        len(after_incomplete_keys - before_incomplete_keys)
-        == _REJECTED_UPLOAD_MARKERS
-    )
+    assert after_incomplete_keys == before_incomplete_keys
     return accepted
 
 

@@ -1,6 +1,6 @@
 import hashlib
 import os
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -15,14 +15,17 @@ from docpipe_ingestion.application.errors import (
     EmptyFileError,
     FileTooLargeError,
     IngestionError,
+    InvalidFileStructureError,
     MetadataPersistenceError,
     UnsupportedFileTypeError,
 )
+from docpipe_ingestion.application.file_validation import ValidatedFileStream
 from docpipe_ingestion.application.ingest_document import (
     IngestDocument,
     IngestDocumentCommand,
     IngestionLimits,
 )
+from docpipe_ingestion.application.ports import DocumentStorage
 from docpipe_ingestion.application.reconciliation import ReconcileStorage
 from docpipe_ingestion.domain.models import DocumentStatus
 from docpipe_ingestion.infrastructure.database.engine import SessionFactory
@@ -30,14 +33,18 @@ from docpipe_ingestion.infrastructure.database.models import OutboxEventModel
 from docpipe_ingestion.infrastructure.database.unit_of_work import (
     SqlAlchemyUnitOfWork,
 )
-from docpipe_ingestion.infrastructure.storage.local import LocalDocumentStorage
+from docpipe_ingestion.infrastructure.storage.local import (
+    LocalDocumentStorage,
+    StorageWriteError,
+)
+from tests.document_fixtures import valid_pdf
 
 DOCUMENT_ID = UUID('12345678-1234-5678-1234-567812345678')
 STORAGE_ID = UUID('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
 EVENT_ID = UUID('11111111-2222-3333-4444-555555555555')
 CORRELATION_ID = UUID('87654321-4321-8765-4321-876543218765')
 NOW = datetime(2026, 9, 17, 12, tzinfo=UTC)
-CONTENT = b'%PDF-1.7\nsynthetic document'
+CONTENT = valid_pdf()
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +62,7 @@ def _uuid_factory() -> Iterator[UUID]:
 
 
 def _use_case(
-    storage: LocalDocumentStorage,
+    storage: DocumentStorage,
     session_factory: SessionFactory,
     *,
     failing_commit: bool = False,
@@ -83,6 +90,39 @@ class FailingSqlAlchemyUnitOfWork(SqlAlchemyUnitOfWork):
     @override
     def commit(self) -> None:
         raise RuntimeError('synthetic database failure')
+
+
+class FailingStorage(DocumentStorage):
+    def __init__(self) -> None:
+        self.received_stream: Iterable[bytes] | None = None
+
+    @override
+    def store(self, storage_key: str, chunks: Iterable[bytes]) -> None:
+        del storage_key
+        self.received_stream = chunks
+        next(iter(chunks))
+        raise StorageWriteError('synthetic storage failure')
+
+    @override
+    def list_keys(self) -> set[str]:
+        return set()
+
+    @override
+    def list_incomplete(self, *, older_than: datetime) -> set[str]:
+        del older_than
+        return set()
+
+
+class RecordingStorage(FailingStorage):
+    def __init__(self) -> None:
+        super().__init__()
+        self.content = b''
+
+    @override
+    def store(self, storage_key: str, chunks: Iterable[bytes]) -> None:
+        del storage_key
+        self.received_stream = chunks
+        self.content = b''.join(chunks)
 
 
 def test_ingestion_stores_file_and_persists_matching_metadata(
@@ -136,6 +176,14 @@ def test_ingestion_stores_file_and_persists_matching_metadata(
             filename='sample.txt',
             content_type='text/plain',
             expected_error=UnsupportedFileTypeError,
+        ),
+        InvalidIngestionCase(
+            content=(
+                b'%PDF-1.7\nDocumento sint\xc3\xa9tico para teste local.\n'
+            ),
+            filename='false.pdf',
+            content_type='application/pdf',
+            expected_error=InvalidFileStructureError,
         ),
         InvalidIngestionCase(
             content=b'%PDF-' + (b'a' * 1_020),
@@ -207,3 +255,48 @@ def test_database_failure_leaves_discoverable_orphan_without_deleting_it(
     assert report.incomplete_keys == frozenset({old_incomplete.name})
     assert orphan_path.exists()
     assert old_incomplete.exists()
+
+
+def test_success_closes_staging_resource(
+    session_factory: SessionFactory,
+) -> None:
+    storage = RecordingStorage()
+    use_case = _use_case(storage, session_factory)
+
+    document = use_case.execute(
+        IngestDocumentCommand(
+            source=BytesIO(CONTENT),
+            original_name='synthetic.pdf',
+            content_type='application/pdf',
+            correlation_id=CORRELATION_ID,
+        )
+    )
+
+    assert document.sha256 == hashlib.sha256(CONTENT).hexdigest()
+    assert storage.content == CONTENT
+    assert isinstance(storage.received_stream, ValidatedFileStream)
+    assert storage.received_stream._temporary is None
+
+
+def test_storage_error_closes_staging_and_leaves_no_metadata(
+    session_factory: SessionFactory,
+) -> None:
+    storage = FailingStorage()
+    use_case = _use_case(storage, session_factory)
+
+    with pytest.raises(StorageWriteError):
+        use_case.execute(
+            IngestDocumentCommand(
+                source=BytesIO(CONTENT),
+                original_name='synthetic.pdf',
+                content_type='application/pdf',
+                correlation_id=CORRELATION_ID,
+            )
+        )
+
+    assert storage.received_stream is not None
+    assert isinstance(storage.received_stream, ValidatedFileStream)
+    assert storage.received_stream._temporary is None
+    with SqlAlchemyUnitOfWork(session_factory) as unit_of_work:
+        assert unit_of_work.documents.get(DOCUMENT_ID) is None
+        assert unit_of_work.outbox_events.get(EVENT_ID) is None
